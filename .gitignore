@@ -4,3 +4,5 @@ __pycache__
 
 .venv
 venv
+
+/third_party
