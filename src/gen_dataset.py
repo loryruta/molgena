@@ -23,17 +23,16 @@ def is_dataset_valid():
     df = pd.read_csv(DATASET_PATH)
 
     is_valid = True
-    is_valid &= set(df.columns) != {'smile', 'logp', 'mw', 'qed', 'sa'}
+    is_valid &= set(df.columns) == {'smiles', 'logp', 'mw', 'qed', 'sa'}
     is_valid &= len(df) != DATASET_EXPECTED_SIZE
     return (is_valid, df,)
 
 
 def generate_dataset(fast_iterator: FastIterator):
     # Start from the ZINC dataset from TDC
-    dataset = MolGen(name = 'ZINC')
+    dataset = MolGen(name='ZINC')
     df = dataset.get_data()
 
-    df.rename({'smiles': 'smile'}, axis=1, inplace=True)
     df['logp'] = None
     df['mw'] = None
     df['qed'] = None
@@ -41,7 +40,7 @@ def generate_dataset(fast_iterator: FastIterator):
 
     def calc_mol_props(i: int):
         # Function called in multiprocess manner
-        mol_smile = df.at[i, 'smile']  # TODO Require dt, does this mean dataframe is copied to every process?
+        mol_smile = df.at[i, 'smiles']  # TODO Require dt, does this mean dataframe is copied to every process?
         mol = Chem.MolFromSmiles(mol_smile)
 
         logp = Crippen.MolLogP(mol)
@@ -69,13 +68,13 @@ def print_similarities(df, fast_iterator: FastIterator, seed = None):
     sampled_smiles = df.sample(n=100, random_state=seed)
 
     for i, row in sampled_smiles.iterrows():
-        sample_smile = row['smile']
+        sample_smile = row['smiles']
         sample_mol = Chem.MolFromSmiles(sample_smile)
         sample_mol_fingerprint = Chem.RDKFingerprint(sample_mol)
 
         def calc_tanimoto_similarity(i: int):
-            smile = df.at[i, 'smile']
-            mol = Chem.MolFromSmiles(smile)
+            smiles = df.at[i, 'smiles']
+            mol = Chem.MolFromSmiles(smiles)
             mol_fingerprint = Chem.RDKFingerprint(mol)
             similarity = rdkit.DataStructs.TanimotoSimilarity(sample_mol_fingerprint, mol_fingerprint)
             return similarity
@@ -94,8 +93,8 @@ def print_similarities(df, fast_iterator: FastIterator, seed = None):
         print(tabulate([
             ["Sample index", i],
             ["Sample molecule", sample_smile],
-            ["Min similarity", min_similarity[1], df.at[int(min_similarity[0]), 'smile']],
-            ["Max similarity", max_similarity[1], df.at[int(max_similarity[0]), 'smile']],
+            ["Min similarity", min_similarity[1], df.at[int(min_similarity[0]), 'smiles']],
+            ["Max similarity", max_similarity[1], df.at[int(max_similarity[0]), 'smiles']],
         ]))
 
 
@@ -127,20 +126,20 @@ if __name__ == "__main__":
     avg_qed = df['qed'].mean()
 
     print(tabulate([
-        ["Max logp", max_logp["logp"], max_logp["smile"]],
-        ["Min logp", min_logp["logp"], min_logp["smile"]],
+        ["Max logp", max_logp["logp"], max_logp["smiles"]],
+        ["Min logp", min_logp["logp"], min_logp["smiles"]],
         ["Avg logp", avg_logp],
 
-        ["Max MW", max_mw["mw"], max_mw["smile"]],
-        ["Min MW", min_mw["mw"], min_mw["smile"]],
+        ["Max MW", max_mw["mw"], max_mw["smiles"]],
+        ["Min MW", min_mw["mw"], min_mw["smiles"]],
         ["Avg MW", avg_mw],
 
-        ["Max SA", max_sa["sa"], max_sa["smile"]],
-        ["Min SA", min_sa["sa"], min_sa["smile"]],
+        ["Max SA", max_sa["sa"], max_sa["smiles"]],
+        ["Min SA", min_sa["sa"], min_sa["smiles"]],
         ["Avg SA", avg_sa],
 
-        ["Max QED", max_qed["qed"], max_qed["smile"]],
-        ["Min QED", min_qed["qed"], min_qed["smile"]],
+        ["Max QED", max_qed["qed"], max_qed["smiles"]],
+        ["Min QED", min_qed["qed"], min_qed["smiles"]],
         ["Avg QED", avg_qed],
     ]))
 
