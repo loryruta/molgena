@@ -3,9 +3,7 @@ from rdkit import Chem
 from rdkit.Chem import Crippen, Descriptors, AllChem
 from tdc.generation import MolGen
 from concurrent.futures import ThreadPoolExecutor
-from math import ceil
 import sascorer
-from time import time
 import multiprocess
 from os import path
 import pandas as pd
@@ -59,14 +57,14 @@ def generate_dataset(fast_iterator: FastIterator):
         df.at[i, 'qed'] = qed
         df.at[i, 'sa'] = sa
 
-    fast_iterator.iterate(len(df), calc_mol_props, apply_mol_props)
+    fast_iterator.iterate(len(df), calc_mol_props, apply_mol_props, do_log=True)
 
     print(f"Saving dataset to {DATASET_PATH}...")
     df.to_csv(DATASET_PATH)
     return df
 
 
-def print_similarities(df, fast_iterator: FastIterator, seed: int = 0):
+def print_similarities(df, fast_iterator: FastIterator, seed = None):
     # Sample a few molecules from the dataset and calculate similarity with all other molecules
     sampled_smiles = df.sample(n=100, random_state=seed)
 
@@ -92,9 +90,6 @@ def print_similarities(df, fast_iterator: FastIterator, seed: int = 0):
         similarities = np.array(similarities)
         min_similarity = similarities[np.argmin(similarities[:,1])]
         max_similarity = similarities[np.argmax(similarities[:,1])]
-
-        print(f"Min similarity at {int(min_similarity[0])}: {min_similarity[1]}")
-        print(f"Max similarity at {int(max_similarity[0])}: {max_similarity[1]}")
 
         print(tabulate([
             ["Sample index", i],
@@ -149,7 +144,7 @@ if __name__ == "__main__":
         ["Avg QED", avg_qed],
     ]))
 
-    print_similarities(df, fast_iterator, seed=23)
+    print_similarities(df, fast_iterator)
 
     process_pool.close()
 

@@ -3,7 +3,6 @@ from concurrent.futures import ThreadPoolExecutor
 from math import ceil
 from time import time
 
-
 class FastIterator:
     def __init__(self, process_pool: multiprocess.Pool, thread_pool: ThreadPoolExecutor):
         self._process_pool = process_pool
@@ -11,7 +10,7 @@ class FastIterator:
 
 
     @staticmethod
-    def _iterate_chunk(proc_idx: int, from_idx: int, to_idx: int, callback):
+    def _iterate_chunk(proc_idx: int, from_idx: int, to_idx: int, callback, do_log: bool):
         assert(from_idx <= to_idx)
 
         generated_data = []
@@ -21,30 +20,37 @@ class FastIterator:
             generated_data_entry = callback(i)
             if generated_data_entry != None:
                 generated_data.append((i, generated_data_entry))
-            if time() - last_log_t > 5.0:
+
+            if do_log and time() - last_log_t > 5.0:
                 print(f"Worker {proc_idx:>3} - Processed {i - from_idx:>4}/{num_items:>4}...")
                 last_log_t = time()
-        print(f"Worker {proc_idx:>3} - Work done")
+
+        if do_log:
+            print(f"Worker {proc_idx:>3} - Work done")
+
         return generated_data
 
 
     @staticmethod
-    def _process_generated_data(job_idx: int, generated_data: list, process_callback):
-        print(f"Job {job_idx}; Processing {len(generated_data)}...")
+    def _process_generated_data(job_idx: int, generated_data: list, process_callback, do_log: bool):
         last_log_t = time()
         processed_data = []
         for i, generated_data_entry in generated_data:
             processed_data_entry = process_callback(i, generated_data_entry);
             if processed_data_entry != None:
                 processed_data.append(processed_data_entry)
-            if time() - last_log_t > 5.0:
+
+            if do_log and time() - last_log_t > 5.0:
                 print(f"Job {job_idx:>3} - Processed {i}/{len(generated_data)}...")
                 last_log_t = time()
-        print(f"Job {job_idx}; Work done")
+
+        if do_log:
+            print(f"Job {job_idx}; Work done")
+
         return processed_data
 
 
-    def iterate(self, num_items: int, generate_callback, process_callback):
+    def iterate(self, num_items: int, generate_callback, process_callback, do_log: bool=False):
         """
         Iterate the until num_items in a multiprocess manner.
         Invoke generate_callback for every item, from different processes. Such callback possibly can generate data.
@@ -59,7 +65,7 @@ class FastIterator:
         for proc_idx in range(0, num_processes):
             from_idx = proc_idx * chunk_size
             to_idx = min(from_idx + chunk_size, num_items)
-            generated_async = self._process_pool.apply_async(FastIterator._iterate_chunk, (proc_idx, from_idx, to_idx, generate_callback))
+            generated_async = self._process_pool.apply_async(FastIterator._iterate_chunk, (proc_idx, from_idx, to_idx, generate_callback, do_log))
             generated_async_list.append(generated_async)
         
         # Process previously generated data using multiple threads but one process
@@ -68,7 +74,7 @@ class FastIterator:
         for job_idx, generated_async in enumerate(generated_async_list):
             generated_data = generated_async.get()
             if process_callback and generated_data:
-                future_processed = self._thread_pool.submit(FastIterator._process_generated_data, job_idx, generated_data, process_callback)
+                future_processed = self._thread_pool.submit(FastIterator._process_generated_data, job_idx, generated_data, process_callback, do_log)
                 future_processed_list.append(future_processed)
 
         # Finally processed data is gathered in one list
