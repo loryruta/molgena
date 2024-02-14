@@ -1,4 +1,4 @@
-# Molecular generator
+# Molly (Molecular generator)
 
 Project developed for the exam of the course AI for Bioinformatics.
 
