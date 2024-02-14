@@ -50,11 +50,11 @@ def main():
     vocab = list(set(vocab))
 
     # Create a dataframe for the vocabulary:
-    # - x is the molecule SMILES from which the Motif is originated
-    # - y is the Motif SMILES
+    # - x is the molecule SMILES from which the Cluster is originated
+    # - y is the Cluster SMILES
     vocab_df = pd.DataFrame(vocab, columns=['x', 'y'])
     vocab_df.to_csv(VOCAB_PATH)
-    print(f"Vocabulary saved to: {VOCAB_PATH} ({len(vocab)} entries)")
+    print(f"Vocabulary saved to: {VOCAB_PATH} ({len(vocab)} clusters)")
 
 
 if __name__ == "__main__":
