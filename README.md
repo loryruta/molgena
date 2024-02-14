@@ -1,4 +1,4 @@
-# Molly (Molecular generator)
+# MOLGENA (Molecular genarator)
 
 Project developed for the exam of the course AI for Bioinformatics.
 
