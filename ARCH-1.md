@@ -9,6 +9,16 @@ Differently from them, we start from ZINC dataset, downloaded from TDCommons
 
 ![image](images/arch_1.png)
 
+Atom features:
+- Atomic number
+- Explicit valence
+- Formal charge
+- Isotope
+- Mass
+
+Bond features:
+- Bond type: ZERO, SINGLE, DOUBLE, TRIPLE, ...
+
 # Loss function
 
 The loss function is split into two different parts: on one hand we have to optimize the molecule score, on the other
