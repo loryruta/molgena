@@ -9,14 +9,14 @@ Differently from them, we start from ZINC dataset, downloaded from TDCommons
 
 ![image](images/arch_1.png)
 
-Atom features:
+Atom features (shape: (5,)):
 - Atomic number
 - Explicit valence
 - Formal charge
 - Isotope
 - Mass
 
-Bond features:
+Bond features (shape: (1,)):
 - Bond type: ZERO, SINGLE, DOUBLE, TRIPLE, ...
 
 # Loss function
