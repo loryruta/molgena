@@ -1,7 +1,6 @@
 from os import path
-import multiprocess
 from concurrent.futures import ThreadPoolExecutor
-from fast_iter import FastIterator
+import torch
 
 # ------------------------------------------------------------------------------------------------
 # Configuration constants
@@ -19,3 +18,13 @@ MOTIF_GRAPH_PATH = path.join(DATA_DIR, "motif_graph.gml")
 # process_pool = multiprocess.Pool()
 threadpool = ThreadPoolExecutor(max_workers=16)
 # fast_iterator = FastIterator(process_pool, threadpool)
+
+
+def _on_import():
+    # TODO Probably doesn't handle multi-GPU scenario
+    selected_dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+    torch.set_default_device(selected_dev)
+    print(f"Default PyTorch device to: \"{selected_dev}\"")
+
+
+_on_import()
