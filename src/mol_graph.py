@@ -4,6 +4,7 @@ import networkx as nx
 from rdkit import Chem
 from rdkit.Chem import Draw
 import matplotlib.pyplot as plt
+from typing import *
 
 
 def create_atom_feature_vector(atom) -> Tensor:
@@ -40,7 +41,7 @@ def create_bond_feature_vector(bond) -> Tensor:
     return torch.tensor([bond_type])
 
 
-def create_mol_graph(smiles: str):
+def create_mol_graph(smiles: str) -> Tuple[nx.Graph, Chem.Mol]:
     mol = Chem.MolFromSmiles(smiles)
     mol_graph = nx.Graph()
 
