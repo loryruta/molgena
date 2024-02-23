@@ -57,6 +57,12 @@ sim(fp1, fp2) = intersect(fp1, fp2) / union(fp1, fp2)
 Same as Lewis structure for representing molecule geometry but without lone pairs and formal charges (electrons weren't
 discovered yet!).
 
+### GNN
+
+- Introduction to GNN: https://distill.pub/2021/gnn-intro/
+- GCN without torch_geometric: http://bit.ly/gnn_vm
+- Using edge features in GNN: https://www.youtube.com/watch?v=mdWQYYapvR8
+
 ###### References
 
 - https://www.chem.ucla.edu/~harding/IGOC/K/kekule_structure.html
