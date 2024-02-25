@@ -1,7 +1,8 @@
 # MOLGENA (Molecular genarator) :construction:
 
 _The project is still under development and deep thinking.
-I trust the process, and I'm confident I will eventually get awesome results but I'm good also if they're just a little reasonable :smile:_
+I trust the process, and I'm confident I will eventually get awesome results but I'm also good if they're just a little
+reasonable_ :smile:
 
 Project ~~developed~~ under development and deep thinking for the exam of the course "AI for Bioinformatics".
 
