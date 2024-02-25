@@ -51,6 +51,9 @@ def create_mol_graph(smiles: str):
 
     mol = Chem.MolFromSmiles(smiles)
 
+    num_atoms = mol.GetNumAtoms()
+    num_bonds = mol.GetNumBonds()
+
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(atom.GetIdx())
         node_features.append(_create_atom_features(atom))
@@ -68,7 +71,9 @@ def create_mol_graph(smiles: str):
     return (
         torch.tensor(node_features, dtype=torch.float),
         torch.tensor(edge_features, dtype=torch.float),
-        torch.tensor(edges, dtype=torch.long).t().contiguous()
+        torch.tensor(edges, dtype=torch.long).t().contiguous(),
+        torch.zeros((num_atoms, 32,), dtype=torch.float),  # TODO custom dim
+        torch.zeros((num_bonds * 2, 32,), dtype=torch.float),  # TODO custom dim
     )
 
 
