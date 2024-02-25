@@ -7,28 +7,31 @@ from typing import *
 import pandas as pd
 
 
-class EncodeMolLayer(torch.nn.Module):
+class EncodeMolMPN(nn.Module):
     """ Performs message passing in a loopy belief propagation fashion.
-     As described in JT-VAE paragraph 2.2 Graph Encoder.
+     As described in JT-VAE paragraph 2.2 Graph Encoder:
+     https://arxiv.org/abs/1802.04364
      """
 
-    def __init__(self, **config):
+    def __init__(self, **kwargs):
         super().__init__()
 
-        self._config = config
+        self._num_steps = kwargs['num_steps']
+        self._node_features_dim = kwargs['node_features_dim']
+        self._edge_features_dim = kwargs['edge_features_dim']
+        self._node_hidden_dim = kwargs['node_hidden_dim']
+        self._edge_hidden_dim = kwargs['edge_hidden_dim']
 
-        self.T = config['num_steps']
-        self.W1 = nn.Parameter(torch.empty((config['edge_hidden_dim'], config['node_features_dim'])))
-        self.W2 = nn.Parameter(torch.empty((config['edge_hidden_dim'], config['edge_features_dim'])))
-        self.W3 = nn.Parameter(torch.empty((config['edge_hidden_dim'], config['edge_hidden_dim'])))
-        self.U1 = nn.Parameter(torch.empty((config['node_hidden_dim'], config['node_features_dim'])))
-        self.U2 = nn.Parameter(torch.empty((config['node_hidden_dim'], config['edge_hidden_dim'])))
+        self.W1 = nn.Parameter(torch.empty((self._edge_hidden_dim, self._node_features_dim)))
+        self.W2 = nn.Parameter(torch.empty((self._edge_hidden_dim, self._edge_features_dim)))
+        self.W3 = nn.Parameter(torch.empty((self._edge_hidden_dim, self._edge_hidden_dim)))
+        self.U1 = nn.Parameter(torch.empty((self._node_hidden_dim, self._node_features_dim)))
+        self.U2 = nn.Parameter(torch.empty((self._node_hidden_dim, self._edge_hidden_dim)))
 
     def _update_edges(self, graphs):
         node_features, edge_features, edges, node_hidden, edge_hidden, batch_indices = graphs
 
         num_nodes = node_features.shape[0]
-        edge_hidden_dim = self._config['edge_hidden_dim']
 
         from_nodes, to_nodes = edges[:]
 
@@ -37,7 +40,7 @@ class EncodeMolLayer(torch.nn.Module):
 
         W2_x_uv = self.W2.matmul(edge_features.t()).t()  # (|E|, EH,)
 
-        tmp = torch.zeros((num_nodes, edge_hidden_dim,))
+        tmp = torch.zeros((num_nodes, self._edge_hidden_dim,))
         wu_hidden_sum = torch.scatter_reduce(tmp, 0, to_nodes.unsqueeze(1), edge_hidden, reduce='sum')  # (|V|, EH,)
         wu_hidden_sum = torch.index_select(wu_hidden_sum, 0, from_nodes)  # (|E|, EH,)
         W3_wu_eh_sum = self.W3.matmul(wu_hidden_sum.t()).t()  # (|E|, EH,)
@@ -49,36 +52,84 @@ class EncodeMolLayer(torch.nn.Module):
         node_features, edge_features, edges, node_hidden, edge_hidden, batch_indices = graphs
 
         num_nodes = node_features.shape[0]
-        edge_hidden_dim = self._config['edge_hidden_dim']
 
         from_nodes, to_nodes = edges[:]
 
         U1_x_u = self.U1.matmul(node_features.t()).t()  # (|V|, NH,)
         U2_vu_hidden = self.U2.matmul(edge_hidden.t()).t()  # (|E|, NH,)
 
-        tmp = torch.zeros((num_nodes, edge_hidden_dim,))
+        tmp = torch.zeros((num_nodes, self._edge_hidden_dim,))
         U2_vu_hidden_sum = torch.scatter_reduce(tmp, 0, to_nodes.unsqueeze(1), U2_vu_hidden, reduce='sum')  # (|V|, EH,)
 
         u_hidden = torch.relu(U1_x_u + U2_vu_hidden_sum)
         return node_features, edge_features, edges, u_hidden, edge_hidden, batch_indices
 
-    def _propagate(self, graphs):
-        for _ in range(self.T):
+    def forward(self, graphs):
+        for _ in range(self._num_steps):
             self._update_edges(graphs)
         self._update_nodes(graphs)
         return graphs
 
-    def forward(self, graphs):  # TODO convert graphs to a dataclass ?
-        self._propagate(graphs)
+
+class EncodeMolLayer(nn.Module):
+    def __init__(self, **kwargs):
+        super().__init__()
+
+        self._node_hidden_dim = kwargs['node_hidden_dim']
+
+        self._encode_mol_mpn = EncodeMolMPN(**kwargs)
+
+    def forward(self, graphs):
+        self._encode_mol_mpn(graphs)
 
         node_features, edge_features, edges, node_hidden, edge_hidden, batch_indices = graphs
 
         num_batches = (torch.max(batch_indices) + 1).item()  # TODO could be cached
-        node_hidden_dim = self._config['node_hidden_dim']
+        node_hidden_dim = self._node_hidden_dim
 
         mol_repr = torch.zeros((num_batches, node_hidden_dim,))
         mol_repr = torch.scatter_reduce(mol_repr, 0, batch_indices.unsqueeze(1), node_hidden, reduce='mean')  # (B, NH,)
         return mol_repr
+
+
+def batch_tensorized_graphs(graphs: pd.DataFrame):  # TODO Any because I'm lazy
+    """ Given an iterable of tensorized graphs, batch them together for parallelized propagation.
+    Similarly to what's described here:
+    https://pytorch-geometric.readthedocs.io/en/latest/notes/batching.html
+    """
+
+    node_features, edge_features, edges, node_hidden, edge_hidden, batch_indices = [], [], [], [], [], []
+
+    batch_idx = 0
+    node_offset = 0
+
+    for _, graph in graphs.iterrows():
+        # node_features, edge_features, edges, node_hidden, edge_hidden = graph
+
+        num_nodes = graph[0].shape[0]
+        # num_edges = graph[1].shape[0]
+
+        node_features.append(graph[0])
+        edge_features.append(graph[1])
+        edges.append(graph[2] + node_offset)
+        node_hidden.append(graph[3])
+        edge_hidden.append(graph[4])
+        batch_indices.extend([batch_idx] * num_nodes)
+
+        # node_hidden.append(torch.zeros(size=(num_nodes, node_hidden_dim,))) TODO remove
+        # edge_hidden.append(torch.zeros(size=(num_edges, edge_hidden_dim,))) TODO remove
+
+        node_offset += num_nodes
+        batch_idx += 1
+
+    node_features = torch.cat(node_features)
+    edge_features = torch.cat(edge_features)
+    edges = torch.cat(edges, dim=1)
+    node_hidden = torch.cat(node_hidden)
+    edge_hidden = torch.cat(edge_hidden)
+    batch_indices = torch.tensor(batch_indices, dtype=torch.long)
+
+    return node_features, edge_features, edges, node_hidden, edge_hidden, batch_indices
 
 
 def _batch_smiles(smiles_list: List[str], node_hidden_dim: int, edge_hidden_dim: int):
@@ -127,12 +178,15 @@ def _main():
     encode_mol_layer = EncodeMolLayer(node_features_dim=5, edge_features_dim=1, node_hidden_dim=NH,
                                       edge_hidden_dim=EH, num_steps=100)
 
+    num_params = sum(param.numel() for param in encode_mol_layer.parameters())
+    print(f"Model params: {num_params}")
+
     start_at = time()
     mol_repr = encode_mol_layer(graphs)
     assert mol_repr.shape == (len(smiles_list), EH,)
     elapsed_time = time() - start_at
 
-    print(f"Mol repr: {mol_repr.shape}, Elapsed time: {elapsed_time}s")
+    print(f"Mol repr: {mol_repr.shape}, Elapsed time: {elapsed_time:.3f}s")
 
 
 if __name__ == '__main__':
