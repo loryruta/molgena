@@ -17,6 +17,9 @@ class SelectMotifAttachment(nn.Module):
         self._motif_edge_hidden_dim = kwargs['motif_edge_hidden_dim']  # 32
         self._max_atoms_per_motif = kwargs['max_atoms_per_motif']  # 16
 
+        # If MLP output is higher than this threshold, the motif atom is selected (part of the attachment)
+        self._select_motif_atom_threshold = kwargs['select_motif_atom_threshold']
+
         self._encode_mol_mpn = EncodeMolMPN(
             num_steps=8,
             node_features_dim=self._motif_node_features_dim,
@@ -72,7 +75,6 @@ class SelectMotifAttachment(nn.Module):
         selected_motif_graphs = batch_tensorized_graphs(motif_graphs.iloc[selected_motifs.cpu()])
 
         node_features, edge_features, edges, node_hidden, edge_hidden, batch_indices = selected_motif_graphs
-        num_nodes = node_features.shape[0]
         batch_size = mol_reprs.shape[0]
 
         # Run message passing on selected motifs (use EncodeMolMPN)
@@ -83,20 +85,20 @@ class SelectMotifAttachment(nn.Module):
         node_mol_repr = torch.index_select(mol_reprs, 0, batch_indices)  # (MV, MR)
         mlp_input = torch.cat([node_hidden, node_mol_repr, ], dim=1)  # (MV, NH+MR)
         mlp_output = self._pick_atom_mlp(mlp_input)  # (MV, 1)
+        selected_atoms = (mlp_output >= self._select_motif_atom_threshold)  # (MV, 1)
 
-        # The output is a tensor (B, MN, MNH) that is: for every batched element, for every selected Motif atom, we
-        # consider a non-zero hidden vector IF such atom was taken. Note that MN (max motif atoms, e.g. ~16) could be
-        # larger than actual number of atoms. In such case we pad the vector with zeros
+        # The output tensor has shape (B, MN), that is: for every batched element, we have an MN-dim boolean vector,
+        # that tells which atoms of the selected motif should form a bond with the input molecule. Note that since MN is
+        # usually larger than motif's real atoms count, the attachment selection vector is padded with False
         selected_motif_attachments = torch.zeros((
             batch_size,
             self._max_atoms_per_motif,
             self._motif_node_hidden_dim
-        ))
-        weighted_hidden = node_hidden * mlp_output
-        for bi in range(batch_size):  # TODO slow iteration on batches (didn't find a way to avoid it)
-            non_padding_hidden = weighted_hidden[batch_indices == bi]  # (<MN, MNH)
-            selected_motif_attachments[bi][:non_padding_hidden.shape[0]] = non_padding_hidden
-        return selected_motif_attachments  # (B, MN, MNH)
+        ), dtype=torch.bool)
+        for batch_idx in range(batch_size):  # TODO slow iteration on batches (didn't find a way to avoid it)
+            selected_motif_atoms = selected_atoms[batch_indices == batch_idx]  # (<MN, MNH)
+            selected_motif_attachments[batch_idx][:selected_motif_atoms.shape[0]] = selected_motif_atoms
+        return selected_motif_attachments  # (B, MN)
 
 
 def _main():
@@ -117,7 +119,9 @@ def _main():
 
     select_motif_attachment = SelectMotifAttachment(mol_repr_dim=mol_repr_dim, motif_node_features_dim=5,
                                                     motif_edge_features_dim=1, motif_node_hidden_dim=32,
-                                                    motif_edge_hidden_dim=32, max_atoms_per_motif=16)
+                                                    motif_edge_hidden_dim=32, max_atoms_per_motif=16,
+                                                    select_motif_atom_threshold=0.6
+                                                    )
 
     num_params = sum(param.numel() for param in select_motif_attachment.parameters())
     print(f"Model params: {num_params}")

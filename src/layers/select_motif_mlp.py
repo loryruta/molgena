@@ -6,6 +6,7 @@ from typing import *
 
 # TODO Implement Motif selection with a GNN + path selection?
 #   It could potentially reduce the number of parameters.
+
 class SelectMotifMLP(nn.Module):
     """ MLP for Motif selection.
     Given the potential high number of motifs, this network can easily grow in size. """
