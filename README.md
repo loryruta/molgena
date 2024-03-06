@@ -1,4 +1,4 @@
-# MOLGENA (Molecular genarator) :construction:
+# MOLGENA ([Mole]cular [gena]rator) :construction:
 
 _The project is still under development and deep thinking.
 I trust the process, and I'm confident I will eventually get awesome results but I'm also good if they're just a little
@@ -70,6 +70,12 @@ discovered yet!).
 ###### References
 
 - https://www.chem.ucla.edu/~harding/IGOC/K/kekule_structure.html
+
+
+### Reinforcement learning:
+
+- Intro to RL (openai.com): https://spinningup.openai.com/en/latest/spinningup/rl_intro.html
+- Intro to Policy Optimization (openai.com): https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
 
 # Task we're interested in:
 
