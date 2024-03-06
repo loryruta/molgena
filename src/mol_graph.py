@@ -1,6 +1,8 @@
+from common import *
 import torch
 from rdkit import Chem
 from rdkit.Chem import Draw
+from tensor_graph import TensorGraph
 from typing import *
 
 
@@ -39,42 +41,37 @@ def _create_bond_features(bond) -> List[float]:
     return [bond_type]
 
 
-def create_mol_graph(smiles: str):
-    """ Creates the torch_geometric graph of the input molecule. """
+def create_mol_graph_from_smiles(smiles: str) -> TensorGraph:
+    """ Parses the input SMILES string to a TensorGraph. """
 
     # Reference:
     # https://pytorch-geometric.readthedocs.io/en/latest/get_started/introduction.html
 
-    node_features = []
-    edge_features = []
-    edges = []
+    tensor_graph: TensorGraph = TensorGraph()
+
+    atom_features = []
+    bond_features = []
+    bonds = []
 
     mol = Chem.MolFromSmiles(smiles)
 
-    num_atoms = mol.GetNumAtoms()
-    num_bonds = mol.GetNumBonds()
-
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(atom.GetIdx())
-        node_features.append(_create_atom_features(atom))
+        atom_features.append(_create_atom_features(atom))
 
     for bond in mol.GetBonds():
         u = bond.GetBeginAtomIdx()
         v = bond.GetEndAtomIdx()
-        edges.append([u, v])
-        edges.append([v, u])
+        bonds.append([u, v])
+        bonds.append([v, u])
 
-        t = _create_bond_features(bond)
-        edge_features.append(t)
-        edge_features.append(t)
+        tmp = _create_bond_features(bond)
+        bond_features.extend([tmp, tmp])
 
-    return (
-        torch.tensor(node_features, dtype=torch.float),
-        torch.tensor(edge_features, dtype=torch.float),
-        torch.tensor(edges, dtype=torch.long).t().contiguous(),
-        torch.zeros((num_atoms, 32,), dtype=torch.float),  # TODO custom dim
-        torch.zeros((num_bonds * 2, 32,), dtype=torch.float),  # TODO custom dim
-    )
+    tensor_graph.node_features = torch.tensor(atom_features, dtype=torch.float)
+    tensor_graph.edge_features = torch.tensor(bond_features, dtype=torch.float)
+    tensor_graph.edges = torch.tensor(bonds, dtype=torch.long).t().contiguous()
+    return tensor_graph
 
 
 def _main():
@@ -84,7 +81,7 @@ def _main():
 
     smiles = "CCOC(=O)[C@@H]1CCCN(C(=O)c2nc(-c3ccc(C)cc3)n3c2CCCCC3)C1"
 
-    node_features, edge_features, edges = create_mol_graph(smiles)
+    tensor_graph: TensorGraph = create_mol_graph_from_smiles(smiles)
 
     fig, axs = plt.subplots(2, 1, figsize=(8, 10))
 
@@ -94,7 +91,7 @@ def _main():
     axs[0].imshow(mol_img)
 
     # Draw molecule graph with networkx
-    data = torch_geometric.data.Data(x=node_features, edge_index=edges, edge_attr=edge_features)
+    data = tensor_graph.to_torch_geometric()
     nx_graph = torch_geometric.utils.to_networkx(data, to_undirected=True)
     nx.draw(nx_graph, with_labels=True, ax=axs[1])
 
