@@ -77,6 +77,11 @@ discovered yet!).
 - Intro to RL (openai.com): https://spinningup.openai.com/en/latest/spinningup/rl_intro.html
 - Intro to Policy Optimization (openai.com): https://spinningup.openai.com/en/latest/spinningup/rl_intro3.html#deriving-the-simplest-policy-gradient
 
+### Rdkit
+
+- Molecule sanitization: https://www.rdkit.org/docs/RDKit_Book.html#molecular-sanitization
+- FAQ (common errors): https://github.com/rdkit/rdkit/wiki/FrequentlyAskedQuestions
+
 # Task we're interested in:
 
 - **Constrained molecule optimization**: very useful in drug discovery, the generation of new drugs usually starts with
