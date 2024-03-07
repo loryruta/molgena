@@ -7,6 +7,7 @@ from typing import *
 from collections import Counter
 import logging
 from time import time
+from utils.chem_utils import *
 
 RDKIT_ATOM_PROPS = ['AtomMapNum', 'AtomicNum', 'ChiralTag', 'FormalCharge', 'Hybridization', 'IsAromatic', 'Isotope',
                     'MonomerInfo', 'NoImplicit', 'NumExplicitHs', 'NumRadicalElectrons', 'PDBResidueInfo']
@@ -23,13 +24,6 @@ def get_atom_props_as_dict(atom: Chem.Atom) -> Dict[str, Any]:
     return props
 
 
-def set_atom_props_from_dict(atom: Chem.Atom, props: Dict[str, Any]):
-    for prop_name, prop_val in props.items():
-        assert prop_name in RDKIT_ATOM_PROPS
-        if prop_val is not None:
-            getattr(atom, f"Set{prop_name}")(prop_val)
-
-
 def get_bond_props_as_dict(bond: Chem.Bond) -> Dict[str, Any]:
     props = {}
     for prop_name in RDKIT_BOND_PROPS:
@@ -37,18 +31,6 @@ def get_bond_props_as_dict(bond: Chem.Bond) -> Dict[str, Any]:
         if prop_val is not None:
             props[prop_name] = prop_val
     return props
-
-
-def set_bond_props_from_dict(bond: Chem.Bond, props: Dict[str, Any]):
-    for prop_name, prop_val in props.items():
-        assert prop_name in RDKIT_BOND_PROPS
-        if prop_val is not None:
-            getattr(bond, f"Set{prop_name}")(prop_val)
-
-
-def sanitize_smiles(smiles: str):
-    smiles = Chem.MolToSmiles(Chem.MolFromSmiles(smiles))  # Dekekulize; took from HierVAE code
-    return smiles
 
 
 class MolGraph:
@@ -60,19 +42,19 @@ class MolGraph:
     def __init__(self, smiles: str):  # Private
         if Chem.MolFromSmiles(smiles, sanitize=True) is None:
             raise Exception(f"Invalid SMILES string: \"{smiles}\"")
-        self.smiles = sanitize_smiles(smiles)
+        self.smiles = smiles
 
         self._mol = None
         self._nx_graph = None
 
-    @property
-    def mol(self):
+    def get_mol(self):
         if self._mol is None:
             self._mol = Chem.MolFromSmiles(self.smiles)
-        # TODO Sanitize molecule, precompute properties
+            assert self._mol is not None
+            Chem.Kekulize(self._mol)
         return self._mol
 
-    @property
+    @property  # TODO delete
     def nx_(self) -> nx.Graph:
         if self._nx_graph is None:
             g = nx.Graph()
@@ -86,40 +68,6 @@ class MolGraph:
         return self._nx_graph
 
     @staticmethod
-    def from_nx(g: nx.Graph) -> MolGraph:
-        """ Given a networkx graph that not always is said to be chemically valid (e.g. candidate motif graph).
-         Produce a MolGraph object with a valid SMILES string. """
-
-        edit_mol = Chem.RWMol()
-
-        nx_to_atom_idx = {}
-
-        for u in sorted(g.nodes):
-            node = g.nodes[u]
-            atom = Chem.Atom(node['AtomicNum'])
-            atom.SetFormalCharge(node['FormalCharge'])
-            atom_idx = edit_mol.AddAtom(atom)
-            nx_to_atom_idx[u] = atom_idx
-
-        for u, v in g.edges:
-            edge = g.edges[u, v]
-            edit_mol.AddBond(nx_to_atom_idx[u], nx_to_atom_idx[v], edge['BondType'])
-
-        # Molecule sanitization:
-        # https://www.rdkit.org/docs/RDKit_Book.html#molecular-sanitization
-
-        mol = edit_mol.GetMol()
-
-        # HierVAE code reference:
-        # https://github.com/wengong-jin/hgraph2graph/blob/e396dbaf43f9d4ac2ee2568a4d5f93ad9e78b767/polymers/poly_hgraph/chemutils.py#L68
-        mol = Chem.MolFromSmiles(Chem.MolToSmiles(mol, kekuleSmiles=True))  # Copied, don't ask
-        if mol is None:
-            raise Exception('Invalid input nx molecular graph')
-        Chem.Kekulize(mol, clearAromaticFlags=True)
-        mol = Chem.MolFromSmiles(Chem.MolToSmiles(mol))
-        return MolGraph(Chem.MolToSmiles(mol))
-
-    @staticmethod
     def from_smiles(smiles: str) -> MolGraph:
         return MolGraph(smiles)
 
@@ -128,73 +76,73 @@ def extract_motif_candidates(mol_graph: MolGraph) -> List[MolGraph]:
     """ Extracts motif candidates from the input molecular graph, according to the technique described in:
      "Hierarchical Generation of Molecular Graphs using Structural Motifs", Appendix A
      """
-    mol = mol_graph.mol
-    candidates_graph = nx.Graph()
+
+    # HierVAE code reference:
+    # https://github.com/wengong-jin/hgraph2graph/blob/e396dbaf43f9d4ac2ee2568a4d5f93ad9e78b767/polymers/poly_hgraph/chemutils.py#L44
+
+    # We perform the splitting of the input molecular graph using RWMol.
+    # This class permits to remove atomic bonds while maintaining chemical validity (we can't use networkx for that!)
+
+    mol = mol_graph.get_mol()
+    new_mol = Chem.RWMol(mol)  # The molecule on which we work for splitting
 
     for bond in mol.GetBonds():
-        # HierVAE code reference:
-        # https://github.com/wengong-jin/hgraph2graph/blob/e396dbaf43f9d4ac2ee2568a4d5f93ad9e78b767/polymers/poly_hgraph/chemutils.py#L44
-
         u = bond.GetBeginAtom()
         v = bond.GetEndAtom()
 
-        remove_bond = False
         if bond.IsInRing():
-            remove_bond = False
-        elif u.IsInRing() and v.IsInRing():
-            remove_bond = True  # Bridge bond, remove it
-        elif u.IsInRing() and v.GetDegree() > 1:
-            remove_bond = True  # Bridge bond, remove it
-        elif v.IsInRing() and u.GetDegree() > 1:
-            remove_bond = True  # Bridge bond, remove it
+            continue
 
-        if not remove_bond:
-            candidates_graph.add_node(u.GetIdx(), **get_atom_props_as_dict(u))
-            candidates_graph.add_node(v.GetIdx(), **get_atom_props_as_dict(v))
-            candidates_graph.add_edge(u.GetIdx(), v.GetIdx(), **get_bond_props_as_dict(bond))
+        if u.IsInRing() and v.IsInRing():
+            new_mol.RemoveBond(u.GetIdx(), v.GetIdx())
+        elif u.IsInRing() and v.GetDegree() > 1:
+            new_idx = new_mol.AddAtom(copy_atom(u))
+            new_mol.AddBond(new_idx, v.GetIdx(), bond.GetBondType())
+            new_mol.RemoveBond(u.GetIdx(), v.GetIdx())
+        elif v.IsInRing() and u.GetDegree() > 1:
+            new_idx = new_mol.AddAtom(copy_atom(v))
+            new_mol.AddBond(u.GetIdx(), new_idx, bond.GetBondType())
+            new_mol.RemoveBond(u.GetIdx(), v.GetIdx())
 
     candidates = []
-    for connected_nodes in nx.connected_components(candidates_graph):
-        candidates += [MolGraph.from_nx(mol_graph.nx_.subgraph(connected_nodes))]
+    for atom_indices in Chem.GetMolFrags(new_mol):
+        frag_mol = extract_mol_fragment(new_mol, atom_indices)
+        candidates += [MolGraph.from_smiles(Chem.MolToSmiles(frag_mol))]
     return candidates
 
 
-def decompose_to_bonds_and_rings(mol_graph: MolGraph):
-    mol = mol_graph.mol
+def decompose_to_bonds_and_rings(mol_graph: MolGraph) -> Tuple[Set[str], Tuple[int, int]]:
+    mol = mol_graph.get_mol()
 
-    rings_graph = nx.Graph()
-    parts: List[MolGraph] = []
+    bonds = set()
+    rings_mol = Chem.RWMol(mol)
 
+    # Extract all bonds that are not part of any ring
     for bond in mol.GetBonds():
         u = bond.GetBeginAtom()
         v = bond.GetEndAtom()
-        u_props = get_atom_props_as_dict(u)
-        v_props = get_atom_props_as_dict(v)
-        if bond.IsInRing():
-            # Append the ring as a Motif
-            bond_props = get_bond_props_as_dict(bond)
-            rings_graph.add_node(u.GetIdx(), **u_props)
-            rings_graph.add_node(v.GetIdx(), **v_props)
-            rings_graph.add_edge(u.GetIdx(), v.GetIdx(), **bond_props)
-        else:
-            # Append the standalone bond as a Motif
-            bond_props = get_bond_props_as_dict(bond)
-            bond_graph = nx.Graph()
-            bond_graph.add_node(u.GetIdx(), **u_props)
-            bond_graph.add_node(v.GetIdx(), **v_props)
-            bond_graph.add_edge(u.GetIdx(), v.GetIdx(), **bond_props)
-            parts.append(MolGraph.from_nx(bond_graph))
+        if not bond.IsInRing():
+            rings_mol.RemoveBond(u.GetIdx(), v.GetIdx())
 
-    num_bonds = len(parts)
+            frag_mol = extract_mol_fragment(mol, {u.GetIdx(), v.GetIdx()})
+            bonds.add(Chem.MolToSmiles(frag_mol))
 
-    rings = list(nx.connected_components(rings_graph))
-    num_rings = len(rings)
-    for connected_nodes in rings:
-        ring = MolGraph.from_nx(rings_graph.subgraph(connected_nodes))
-        parts.append(ring)
+    # Remove atoms that were left disconnected after bond removal
+    rings_mol.BeginBatchEdit()
+    for atom in mol.GetAtoms():
+        if atom.GetDegree() == 0:
+            rings_mol.RemoveAtom(atom.GetIdx())
+    rings_mol.CommitBatchEdit()
 
-    assert len(parts) == (num_rings + num_bonds)
-    return parts, (num_rings, num_bonds)
+    # Now only rings should be remained, create a fragment for each of them
+    rings = set()
+    for atom_indices in Chem.GetSymmSSSR(rings_mol):
+        ring_mol = extract_mol_fragment(rings_mol, atom_indices)
+        rings.add(Chem.MolToSmiles(ring_mol))
+
+    # TODO check that the input molecule was fully decomposed (i.e. is extracting rings and bonds "enough")?
+
+    return rings.union(bonds), (len(rings), len(bonds))
 
 
 def construct_motif_graph(mol_graph: MolGraph, motifs: Dict[str, int]):
@@ -258,24 +206,18 @@ def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> 
                          f"Candidate motifs: {len(candidate_counter)}, "
                          f"Time left: {time_left:.1f}s")
             logged_at = time()
-        if i > 5000:
-            break
 
     # If the candidate isn't frequent enough in training set, split it into bonds and rings
+
     num_candidates = len(candidate_counter)
-    for i, (smiles, count) in enumerate(candidate_counter.items()):
+    for i, (frag_smiles, count) in enumerate(candidate_counter.items()):
         if count < min_frequency:
-            candidate = MolGraph.from_smiles(smiles)
-            parts, (num_rings, num_bonds) = decompose_to_bonds_and_rings(candidate)
-            if num_rings > 0:
-                logging.debug(f"Candidate motif decomposed; "
-                              f"SMILES: \"{candidate.smiles}\", "
-                              f"Rings: {num_rings}, "
-                              f"Bonds: {num_bonds}")
-            for part in parts:
-                add_motif(part.smiles, False)
+            candidate = MolGraph.from_smiles(frag_smiles)
+            parts_smiles, _ = decompose_to_bonds_and_rings(candidate)
+            for part_smiles in parts_smiles:
+                add_motif(part_smiles, False)
         else:
-            add_motif(smiles, True)
+            add_motif(frag_smiles, True)
         if i % 100 == 0:
             logging.info(f"{i}/{num_candidates} candidate motifs processed; Output motifs: {len(motifs)}")
 
