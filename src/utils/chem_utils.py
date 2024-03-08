@@ -2,6 +2,22 @@ from rdkit import Chem
 from typing import *
 
 
+def mol_from_smiles(smiles: str, sanitize=True, kekulize=True) -> Chem.Mol:
+    mol = Chem.MolFromSmiles(smiles, sanitize=sanitize)
+    if mol is None:
+        raise Exception(f"Invalid SMILES string: \"{smiles}\"")
+    if kekulize:
+        Chem.Kekulize(mol)
+    return mol
+
+
+def clear_atommap(smiles: str) -> str:
+    mol = mol_from_smiles(smiles)
+    for atom in mol.GetAtoms():
+        atom.SetAtomMapNum(0)
+    return Chem.MolToSmiles(mol, kekuleSmiles=True)
+
+
 def copy_atom(atom: Chem.Atom) -> Chem.Atom:
     new_atom = Chem.Atom(atom.GetSymbol())
     new_atom.SetFormalCharge(atom.GetFormalCharge())
