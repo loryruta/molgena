@@ -22,7 +22,6 @@ class MolDataset(Dataset):
 
     def __getitem__(self, i: int) -> Tuple[str, TensorGraph, nx.Graph]:
         mol_smiles = self._df.iloc[i]['smiles']
-        print(i, mol_smiles)
         return (
             mol_smiles,
             create_mol_graph_from_smiles(mol_smiles),
