@@ -22,23 +22,23 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: pd.DataFrame) -> nx.Grap
     # Assign every mol atom to its motif ID
     candidates = extract_motif_candidates(Chem.MolToSmiles(mol))
     for candidate_idx, candidate in enumerate(candidates):
-        motif_smiles = clear_atommap(candidate)
-        is_motif = motif_smiles in motif_vocab.index
+        candidate_smiles = clear_atommap(candidate)
+        is_motif = candidate_smiles in motif_vocab.index
         if is_motif:
             # The candidate was a Motif as is (frequent enough in training set)
-            motif_id = motif_vocab.loc[motif_smiles]['id']
+            motif_id = motif_vocab.loc[candidate_smiles]['id']
             for atom in mol_from_smiles(candidate).GetAtoms():
                 atom_motif_map[atom.GetAtomMapNum()].add(motif_id)
-            logging.debug(f"{mol_smiles} motif: \"{motif_smiles}\"")
+            # logging.debug(f"{mol_smiles} motif: \"{candidate_smiles}\"")
         else:
             # The candidate must have been split in bonds and rings
-            motifs, _ = decompose_to_bonds_and_rings(candidate)
-            for motif in motifs:
-                motif_smiles = clear_atommap(motif)
-                logging.debug(f"{mol_smiles} candidate motif \"{motif_smiles}\" decomposed to \"{motif_smiles}\"")
-                assert motif_smiles in motif_vocab.index
-                motif_id = motif_vocab.loc[motif_smiles]['id']
-                for atom in mol_from_smiles(motif).GetAtoms():
+            parts, _ = decompose_to_bonds_and_rings(candidate)
+            for part in parts:
+                part_smiles = clear_atommap(part)
+                # logging.debug(f"{mol_smiles} candidate motif \"{candidate_smiles}\" decomposed to: \"{part_smiles}\"")
+                assert part_smiles in motif_vocab.index
+                motif_id = motif_vocab.loc[part_smiles]['id']
+                for atom in mol_from_smiles(part).GetAtoms():
                     atom_motif_map[atom.GetAtomMapNum()].add(motif_id)
 
     # Construct the motif graph
@@ -68,11 +68,30 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: pd.DataFrame) -> nx.Grap
     return motif_nx
 
 
+def _construct_all_motif_graphs():
+    """ Tests that motif graph can be constructed for all training set samples. """
+
+    training_set = pd.read_csv(ZINC_TRAINING_SET_CSV)
+    motif_vocab = pd.read_csv(MOTIF_VOCAB_CSV, index_col=['smiles'])
+
+    started_at = time()
+    logged_at = time()
+    for i, mol_smiles in enumerate(training_set['smiles']):
+        construct_motif_graph(mol_smiles, motif_vocab)
+        if time() - logged_at > 5.0:
+            time_left = (len(training_set) - (i + 1)) / ((i + 1) / (time() - started_at))
+            logging.info(f"Constructed motif graph for {i + 1}/{len(training_set)} molecules; "
+                         f"Time left: {time_left:.1f}s")
+            logged_at = time()
+
+    logging.info("Constructed motif graphs for all training set molecules")
+
+
 def _main():
     import matplotlib.pyplot as plt
     from rdkit.Chem import Draw
 
-    dataset = pd.read_csv(DATASET_PATH)
+    dataset = pd.read_csv(ZINC_TRAINING_SET_CSV)
 
     mol_smiles = dataset['smiles'].sample().iloc[0]
     motif_vocab = pd.read_csv(MOTIF_VOCAB_CSV, index_col=['smiles'])
@@ -112,4 +131,4 @@ def _main():
 
 
 if __name__ == "__main__":
-    _main()
+    _construct_all_motif_graphs()
