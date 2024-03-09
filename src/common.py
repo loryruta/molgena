@@ -10,8 +10,15 @@ import torch
 BASE_DIR = path.abspath(path.dirname(__file__))
 
 DATA_DIR = path.join(BASE_DIR, "data")
-DATASET_PATH = path.join(DATA_DIR, "zinc.csv")
-VOCAB_PATH = path.join(DATA_DIR, "vocab.csv")  # TODO old, rename
+
+ZINC_DATASET_CSV = path.join(DATA_DIR, "zinc.csv")
+ZINC_TRAINING_SET_CSV = path.join(DATA_DIR, "zinc_training_set.csv")
+ZINC_VALIDATION_SET_CSV = path.join(DATA_DIR, "zinc_validation_set.csv")
+ZINC_TEST_SET_CSV = path.join(DATA_DIR, "zinc_test_set.csv")
+
+DATASET_PATH = ZINC_DATASET_CSV  # TODO old name, delete
+VOCAB_PATH = path.join(DATA_DIR, "vocab.csv")  # TODO old, delete
+
 MOTIF_VOCAB_CSV = path.join(DATA_DIR, "motif_vocab.csv")
 MOTIF_GRAPH_PATH = path.join(DATA_DIR, "motif_graph.gml")
 

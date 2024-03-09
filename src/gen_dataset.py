@@ -1,149 +1,45 @@
-import rdkit
-from rdkit import Chem
-from rdkit.Chem import Crippen, Descriptors, AllChem
-from tdc.generation import MolGen
-from concurrent.futures import ThreadPoolExecutor
-import sascorer
-import multiprocess
+from common import *
+import logging
+import tdc.generation
 from os import path
+from typing import *
 import pandas as pd
-from fast_iter import FastIterator
-from tabulate import tabulate
-import numpy as np
 
 
-DATASET_PATH = 'data/zinc.csv'
-DATASET_EXPECTED_SIZE = 249456
+def split_dataset(dataset: pd.DataFrame, training_frac: float, validation_frac: float,
+                  random_state: Optional[int] = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    training_set = dataset.sample(frac=training_frac, random_state=random_state)
+    dataset = dataset.drop(training_set.index)
+    validation_set = dataset.sample(frac=validation_frac / (1.0 - training_frac), random_state=random_state)
+    test_set = dataset.drop(validation_set.index)
+    return training_set, validation_set, test_set
 
 
-def is_dataset_valid():
-    if not path.exists(DATASET_PATH):
-        return (False, None,)
+def _main():
+    RANDOM_STATE = 23
+    TRAINING_FRAC = 0.8
+    VALIDATION_FRAC = 0.1
+    TEST_FRAC = 1.0 - TRAINING_FRAC - VALIDATION_FRAC
 
-    df = pd.read_csv(DATASET_PATH)
+    dataset = tdc.generation.MolGen(name='ZINC').get_data()  # Also TDC provides splits (are those better?)
+    dataset.to_csv(ZINC_DATASET_CSV)
 
-    is_valid = True
-    is_valid &= set(df.columns) == {'smiles', 'logp', 'mw', 'qed', 'sa'}
-    is_valid &= len(df) != DATASET_EXPECTED_SIZE
-    return (is_valid, df,)
+    logging.info(f"Dataset showcase {len(dataset)} entries")
 
+    training_set, validation_set, test_set = split_dataset(dataset,
+                                                           training_frac=TRAINING_FRAC,
+                                                           validation_frac=VALIDATION_FRAC,
+                                                           random_state=RANDOM_STATE)
 
-def generate_dataset(fast_iterator: FastIterator):
-    # Start from the ZINC dataset from TDC
-    dataset = MolGen(name='ZINC')
-    df = dataset.get_data()
+    training_set.to_csv(ZINC_TRAINING_SET_CSV)
+    validation_set.to_csv(ZINC_VALIDATION_SET_CSV)
+    test_set.to_csv(ZINC_TEST_SET_CSV)
 
-    df['logp'] = None
-    df['mw'] = None
-    df['qed'] = None
-    df['sa'] = None
-
-    def calc_mol_props(i: int):
-        # Function called in multiprocess manner
-        mol_smile = df.at[i, 'smiles']  # TODO Require dt, does this mean dataframe is copied to every process?
-        mol = Chem.MolFromSmiles(mol_smile)
-
-        logp = Crippen.MolLogP(mol)
-        mw = Descriptors.MolWt(mol)
-        qed = Chem.QED.qed(mol)
-        sa = sascorer.calculateScore(mol)
-        return (logp, mw, qed, sa,)
-
-    def apply_mol_props(i, mol_props):  # Function called in multithreaded manner
-        logp, mw, qed, sa = mol_props
-        df.at[i, 'logp'] = logp
-        df.at[i, 'mw'] = mw
-        df.at[i, 'qed'] = qed
-        df.at[i, 'sa'] = sa
-
-    fast_iterator.iterate(len(df), calc_mol_props, apply_mol_props, do_log=True)
-
-    print(f"Saving dataset to {DATASET_PATH}...")
-    df.to_csv(DATASET_PATH)
-    return df
-
-
-def print_similarities(df, fast_iterator: FastIterator, seed = None):
-    # Sample a few molecules from the dataset and calculate similarity with all other molecules
-    sampled_smiles = df.sample(n=100, random_state=seed)
-
-    for i, row in sampled_smiles.iterrows():
-        sample_smile = row['smiles']
-        sample_mol = Chem.MolFromSmiles(sample_smile)
-        sample_mol_fingerprint = Chem.RDKFingerprint(sample_mol)
-
-        def calc_tanimoto_similarity(i: int):
-            smiles = df.at[i, 'smiles']
-            mol = Chem.MolFromSmiles(smiles)
-            mol_fingerprint = Chem.RDKFingerprint(mol)
-            similarity = rdkit.DataStructs.TanimotoSimilarity(sample_mol_fingerprint, mol_fingerprint)
-            return similarity
-
-        def apply_tanimoto_similarity(j, similarity):
-            if j != i:
-                return [j, similarity]
-            else:
-                return None  # Don't return similarity for the sample molecule itself
-
-        similarities = fast_iterator.iterate(len(df), calc_tanimoto_similarity, apply_tanimoto_similarity)
-        similarities = np.array(similarities)
-        min_similarity = similarities[np.argmin(similarities[:,1])]
-        max_similarity = similarities[np.argmax(similarities[:,1])]
-
-        print(tabulate([
-            ["Sample index", i],
-            ["Sample molecule", sample_smile],
-            ["Min similarity", min_similarity[1], df.at[int(min_similarity[0]), 'smiles']],
-            ["Max similarity", max_similarity[1], df.at[int(max_similarity[0]), 'smiles']],
-        ]))
+    logging.info(f"Dataset split; "
+                 f"Training set {len(training_set)} ({TRAINING_FRAC * 100:.1f}%), "
+                 f"Validation set {len(validation_set)} ({VALIDATION_FRAC * 100:.1f}%), "
+                 f"Test set {len(test_set)} ({TEST_FRAC * 100:.1f}%)")
 
 
 if __name__ == "__main__":
-    process_pool = multiprocess.Pool()  # Number of processes is CPU count
-    thread_pool = ThreadPoolExecutor(max_workers=16)
-
-    fast_iterator = FastIterator(process_pool, thread_pool)
-
-    (is_valid, df) = is_dataset_valid()
-    if not is_valid:
-        df = generate_dataset(fast_iterator)
-
-    # Print the range (min/max/avg) of the chemical properties
-    max_logp = df.iloc[df['logp'].idxmax()]
-    min_logp = df.iloc[df['logp'].idxmin()]
-    avg_logp = df['logp'].mean()
-
-    max_mw = df.iloc[df['mw'].idxmax()]
-    min_mw = df.iloc[df['mw'].idxmin()]
-    avg_mw = df['mw'].mean()
-
-    max_sa = df.iloc[df['sa'].idxmax()]
-    min_sa = df.iloc[df['sa'].idxmin()]
-    avg_sa = df['sa'].mean()
-
-    max_qed = df.iloc[df['qed'].idxmax()]
-    min_qed = df.iloc[df['qed'].idxmin()]
-    avg_qed = df['qed'].mean()
-
-    print(tabulate([
-        ["Max logp", max_logp["logp"], max_logp["smiles"]],
-        ["Min logp", min_logp["logp"], min_logp["smiles"]],
-        ["Avg logp", avg_logp],
-
-        ["Max MW", max_mw["mw"], max_mw["smiles"]],
-        ["Min MW", min_mw["mw"], min_mw["smiles"]],
-        ["Avg MW", avg_mw],
-
-        ["Max SA", max_sa["sa"], max_sa["smiles"]],
-        ["Min SA", min_sa["sa"], min_sa["smiles"]],
-        ["Avg SA", avg_sa],
-
-        ["Max QED", max_qed["qed"], max_qed["smiles"]],
-        ["Min QED", min_qed["qed"], min_qed["smiles"]],
-        ["Avg QED", avg_qed],
-    ]))
-
-    print_similarities(df, fast_iterator)
-
-    process_pool.close()
-
+    _main()

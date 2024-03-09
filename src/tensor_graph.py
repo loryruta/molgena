@@ -37,7 +37,7 @@ class TensorGraph:
         )  # TODO batch_indices
 
 
-def batch_tensor_graphs(*graphs: TensorGraph):
+def batch_tensor_graphs(graphs: List[TensorGraph]):
     """ Given a list of TensorGraph, batch them together producing one TensorGraph. """
 
     assert len(graphs) > 0

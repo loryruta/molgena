@@ -6,6 +6,8 @@ from tensor_graph import TensorGraph
 from typing import *
 
 
+# TODO rename to tensor_mol_graph (mol_graph is too generic)
+
 def _create_atom_features(atom) -> List[float]:
     atomic_num = atom.GetAtomicNum()
     # Atom.GetChiralTag()
