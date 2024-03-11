@@ -43,12 +43,7 @@ def extract_motif_candidates(mol_smiles: str) -> Set[str]:
     candidates = set()
     for atom_indices in Chem.GetMolFrags(new_mol):
         frag_mol = extract_mol_fragment(new_mol, atom_indices)
-        frag_smiles = Chem.MolToSmiles(frag_mol)
-
-        # clear_atommap here for compatibility with construct_motif_graph:
-        # We want both to produce the same candidate SMILES
-        frag_smiles = clear_atommap(frag_smiles)
-
+        frag_smiles = Chem.MolToSmiles(frag_mol, kekuleSmiles=True)  # Important: kekulize!
         candidates.add(frag_smiles)
     return candidates
 
@@ -67,7 +62,7 @@ def decompose_to_bonds_and_rings(mol_smiles: str) -> Tuple[Set[str], Tuple[int, 
             rings_mol.RemoveBond(u.GetIdx(), v.GetIdx())
 
             frag_mol = extract_mol_fragment(mol, {u.GetIdx(), v.GetIdx()})
-            bonds.add(Chem.MolToSmiles(frag_mol))
+            bonds.add(Chem.MolToSmiles(frag_mol, kekuleSmiles=True))  # Important: kekulize!
 
     # Remove atoms that were left disconnected after bond removal
     rings_mol.BeginBatchEdit()
@@ -80,16 +75,11 @@ def decompose_to_bonds_and_rings(mol_smiles: str) -> Tuple[Set[str], Tuple[int, 
     rings = set()
     for atom_indices in Chem.GetSymmSSSR(rings_mol):
         ring_mol = extract_mol_fragment(rings_mol, atom_indices)
-        rings.add(Chem.MolToSmiles(ring_mol))
-
-    parts_smiles = rings.union(bonds)
+        rings.add(Chem.MolToSmiles(ring_mol, kekuleSmiles=True))  # Important: kekulize!
 
     # TODO check that the input molecule was fully decomposed (i.e. is extracting rings and bonds "enough")?
 
-    # Call clear_atommap on the ring/bond SMILES to ensure compatibility with construct_motif_graph
-    parts_smiles = set([clear_atommap(part) for part in parts_smiles])
-
-    return parts_smiles, (len(rings), len(bonds))
+    return rings.union(bonds), (len(rings), len(bonds))
 
 
 def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> List[Tuple[int, str, bool]]:
