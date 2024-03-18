@@ -18,33 +18,29 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.Graph:
     # Assign every mol atom to its motif ID
     candidates = extract_motif_candidates(mol_smiles)
     for candidate_idx, candidate in enumerate(candidates):
-        cand_smiles = to_vocabulary_format(candidate)
-        is_motif = cand_smiles in motif_vocab.index
-        if is_motif:
+        row = motif_vocab.get_or_null(candidate)
+        if row is not None:
             # The candidate was a Motif as is (frequent enough in training set)
-            motif_id = int(motif_vocab.loc[cand_smiles]['id'])
+            motif_id = int(row['id'])
             for atom in mol_from_smiles(candidate).GetAtoms():
                 atom_clusters[atom.GetAtomMapNum()] = (motif_id, cluster_id)
             cluster_id += 1
-            # logging.debug(f"{mol_smiles} motif: \"{candidate_smiles}\"")
         else:
             # The candidate must have been split in bonds and rings
             parts, _ = decompose_to_bonds_and_rings(candidate)
             for part in parts:
-                part_smiles = to_vocabulary_format(part)
-                # logging.debug(f"{mol_smiles} candidate motif \"{candidate_smiles}\" decomposed to: \"{part_smiles}\"")
-                if part_smiles not in motif_vocab.index:
+                row = motif_vocab.get_or_null(part)
+                if row is None:
                     raise Exception(f"Missing motif in vocabulary;"
                                     f"\nSMILES \"{mol_smiles}\""
-                                    f"\nCandidate: \"{cand_smiles}\""
-                                    f"\nCandidate (atommapped): \"{candidate}\""
-                                    f"\nMissing part: \"{part_smiles}\""
-                                    f"\nMissing part (atommapped): \"{part}\"")
-                motif_id = int(motif_vocab.loc[part_smiles]['id'])
+                                    f"\nCandidate: \"{candidate}\""
+                                    f"\nMissing part: \"{part}\"")
+                motif_id = int(row['id'])
                 for atom in Chem.MolFromSmiles(part).GetAtoms():
                     atom_clusters[atom.GetAtomMapNum()] = (motif_id, cluster_id)
                 cluster_id += 1
 
+    # Finally construct motif graph
     motif_graph = nx.DiGraph()
 
     for motif_id, cluster_id in set(atom_clusters.values()):
@@ -56,7 +52,9 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.Graph:
         _, cluster_1 = atom_clusters[bond.GetBeginAtomIdx()]
         _, cluster_2 = atom_clusters[bond.GetEndAtomIdx()]
         if cluster_1 != cluster_2:
+            # TODO attachment atoms!
             motif_graph.add_edge(cluster_1, cluster_2)
+            motif_graph.add_edge(cluster_2, cluster_1)
 
     return motif_graph
 
@@ -108,17 +106,13 @@ def visualize_motif_graph():
     motifs = decompose_mol(mol_smiles, motif_vocab)
     num_motifs = len(motifs)
 
-    num_rows, num_cols = ceil(num_motifs / 5), 5
-    fig, axs = plt.subplots(num_rows, num_cols, figsize=(10, 10))
-    for ax in axs.flat:
-        ax.axis('off')
     for i, motif in enumerate(motifs):
         motif_id = motif_vocab[motif]['id']
 
-        ax = axs[i // 5, i % 5]
-        ax.axis('off')
-        ax.imshow(Draw.MolToImage(Chem.MolFromSmiles(motif)))
-        ax.text(5, -10, f"Motif ID {motif_id}\n\"{motif}\"")
+        plt.subplot(ceil(num_motifs / 5), 5, i + 1)
+        plt.axis('off')
+        plt.imshow(Draw.MolToImage(Chem.MolFromSmiles(motif)))
+        plt.text(5, -10, f"Motif ID {motif_id}\n\"{motif}\"")
     plt.show()
 
     # Construct and display motif graph
@@ -130,5 +124,5 @@ def visualize_motif_graph():
 
 
 if __name__ == "__main__":
-    # visualize_motif_graph()
-    construct_all_motif_graphs(write_file=False)
+    visualize_motif_graph()
+    #construct_all_motif_graphs(write_file=False)
