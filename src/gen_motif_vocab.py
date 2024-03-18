@@ -6,6 +6,7 @@ from collections import Counter
 import logging
 from time import time
 from utils.chem_utils import *
+from motif_vocab import MotifVocab
 
 
 def to_vocabulary_format(mol_smiles: str):
@@ -60,22 +61,26 @@ def decompose_to_bonds_and_rings(mol_smiles: str) -> Tuple[Set[str], Tuple[int, 
     mol = Chem.MolFromSmiles(mol_smiles)
     Chem.Kekulize(mol)
 
-    # Extract rings
-    rings = set()
-    for atom_indices in Chem.GetSymmSSSR(mol):
-        ring_mol = extract_mol_fragment(mol, atom_indices)
-        ring_smiles = Chem.MolToSmiles(ring_mol)
-        rings.add(ring_smiles)
+    rings_mol = Chem.RWMol(mol)  # A molecule that eventually holds only rings
 
-    # Extract bonds that aren't part of rings
+    # Extract bonds that aren't part of a ring
     bonds = set()
     for bond in mol.GetBonds():
         u = bond.GetBeginAtom()
         v = bond.GetEndAtom()
         if not bond.IsInRing():
+            rings_mol.RemoveBond(u.GetIdx(), v.GetIdx())
+
             bond_mol = extract_mol_fragment(mol, {u.GetIdx(), v.GetIdx()})
             bond_smiles = Chem.MolToSmiles(bond_mol)
             bonds.add(bond_smiles)
+
+    # Extract rings
+    rings = set()
+    for atom_indices in Chem.GetMolFrags(rings_mol):
+        ring_mol = extract_mol_fragment(mol, atom_indices)
+        ring_smiles = Chem.MolToSmiles(ring_mol)
+        rings.add(ring_smiles)
 
     # TODO check that the input molecule was fully decomposed (i.e. is extracting rings and bonds "enough")?
 
