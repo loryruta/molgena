@@ -8,19 +8,27 @@ from time import time
 from utils.chem_utils import *
 
 
+def to_vocabulary_format(mol_smiles: str):
+    mol_smiles = clear_atommap(mol_smiles)
+    mol_smiles = Chem.CanonSmiles(mol_smiles)
+    return mol_smiles
+
+
 def extract_motif_candidates(mol_smiles: str) -> Set[str]:
-    """ Extracts motif candidates from the input molecular graph, according to the technique described in:
-     "Hierarchical Generation of Molecular Graphs using Structural Motifs", Appendix A
+    """ Extracts Motif candidates from the input molecular graph, according to the technique described in:
+    "Hierarchical Generation of Molecular Graphs using Structural Motifs", Appendix A
+
+     :param mol_smiles:
+        A canonical SMILES string, atommapped (important: first canonized and then atommaped).
      """
 
     # HierVAE code reference:
     # https://github.com/wengong-jin/hgraph2graph/blob/e396dbaf43f9d4ac2ee2568a4d5f93ad9e78b767/polymers/poly_hgraph/chemutils.py#L44
 
-    # We perform the splitting of the input molecular graph using RWMol.
-    # This class permits to remove atomic bonds while maintaining chemical validity (we can't use networkx for that!)
+    mol = Chem.MolFromSmiles(mol_smiles)
+    Chem.Kekulize(mol)
 
-    mol = mol_from_smiles(mol_smiles)
-    new_mol = Chem.RWMol(mol)  # The molecule on which we work for splitting
+    new_mol = Chem.RWMol(mol)
 
     for bond in mol.GetBonds():
         u = bond.GetBeginAtom()
@@ -32,50 +40,42 @@ def extract_motif_candidates(mol_smiles: str) -> Set[str]:
         if u.IsInRing() and v.IsInRing():
             new_mol.RemoveBond(u.GetIdx(), v.GetIdx())
         elif u.IsInRing() and v.GetDegree() > 1:
-            new_idx = new_mol.AddAtom(copy_atom(u))
+            new_idx = new_mol.AddAtom(copy_atom(u))  # Also copies atommap
             new_mol.AddBond(new_idx, v.GetIdx(), bond.GetBondType())
             new_mol.RemoveBond(u.GetIdx(), v.GetIdx())
         elif v.IsInRing() and u.GetDegree() > 1:
-            new_idx = new_mol.AddAtom(copy_atom(v))
+            new_idx = new_mol.AddAtom(copy_atom(v))  # Also copies atommap
             new_mol.AddBond(u.GetIdx(), new_idx, bond.GetBondType())
             new_mol.RemoveBond(u.GetIdx(), v.GetIdx())
 
     candidates = set()
     for atom_indices in Chem.GetMolFrags(new_mol):
-        frag_mol = extract_mol_fragment(new_mol, atom_indices)
-        frag_smiles = Chem.MolToSmiles(frag_mol, kekuleSmiles=True)  # Important: kekulize!
-        candidates.add(frag_smiles)
+        cand_mol = extract_mol_fragment(new_mol, atom_indices)
+        cand_smiles = Chem.MolToSmiles(cand_mol)
+        candidates.add(cand_smiles)
     return candidates
 
 
 def decompose_to_bonds_and_rings(mol_smiles: str) -> Tuple[Set[str], Tuple[int, int]]:
-    mol = mol_from_smiles(mol_smiles)
+    mol = Chem.MolFromSmiles(mol_smiles)
+    Chem.Kekulize(mol)
 
+    # Extract rings
+    rings = set()
+    for atom_indices in Chem.GetSymmSSSR(mol):
+        ring_mol = extract_mol_fragment(mol, atom_indices)
+        ring_smiles = Chem.MolToSmiles(ring_mol)
+        rings.add(ring_smiles)
+
+    # Extract bonds that aren't part of rings
     bonds = set()
-    rings_mol = Chem.RWMol(mol)
-
-    # Extract all bonds that are not part of any ring
     for bond in mol.GetBonds():
         u = bond.GetBeginAtom()
         v = bond.GetEndAtom()
         if not bond.IsInRing():
-            rings_mol.RemoveBond(u.GetIdx(), v.GetIdx())
-
-            frag_mol = extract_mol_fragment(mol, {u.GetIdx(), v.GetIdx()})
-            bonds.add(Chem.MolToSmiles(frag_mol, kekuleSmiles=True))  # Important: kekulize!
-
-    # Remove atoms that were left disconnected after bond removal
-    rings_mol.BeginBatchEdit()
-    for atom in mol.GetAtoms():
-        if atom.GetDegree() == 0:
-            rings_mol.RemoveAtom(atom.GetIdx())
-    rings_mol.CommitBatchEdit()
-
-    # Now only rings should be remained, create a fragment for each of them
-    rings = set()
-    for atom_indices in Chem.GetSymmSSSR(rings_mol):
-        ring_mol = extract_mol_fragment(rings_mol, atom_indices)
-        rings.add(Chem.MolToSmiles(ring_mol, kekuleSmiles=True))  # Important: kekulize!
+            bond_mol = extract_mol_fragment(mol, {u.GetIdx(), v.GetIdx()})
+            bond_smiles = Chem.MolToSmiles(bond_mol)
+            bonds.add(bond_smiles)
 
     # TODO check that the input molecule was fully decomposed (i.e. is extracting rings and bonds "enough")?
 
@@ -97,8 +97,8 @@ def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> 
     logged_at = time()
     for i, mol_smiles in enumerate(training_set['smiles']):
         candidates = extract_motif_candidates(mol_smiles)
-        for candidate_smiles in candidates:
-            candidate_counter[candidate_smiles] += 1
+        for cand_smiles in candidates:
+            candidate_counter[cand_smiles] += 1
         if time() - logged_at > 1.0:
             time_left = (len(training_set) - (i + 1)) / ((i + 1) / (time() - started_at))
             logging.info(f"{i}/{len(training_set)} training set SMILES processed; "
@@ -109,13 +109,13 @@ def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> 
     # If the candidate isn't frequent enough in training set, split it into bonds and rings
 
     num_candidates = len(candidate_counter)
-    for i, (candidate_smiles, count) in enumerate(candidate_counter.items()):
+    for i, (cand_smiles, count) in enumerate(candidate_counter.items()):
         if count < min_frequency:
-            parts_smiles, _ = decompose_to_bonds_and_rings(candidate_smiles)
-            for part_smiles in parts_smiles:
-                add_motif(part_smiles, False)
+            parts, _ = decompose_to_bonds_and_rings(cand_smiles)
+            for part_smiles in parts:
+                add_motif(to_vocabulary_format(part_smiles), False)
         else:
-            add_motif(candidate_smiles, True)
+            add_motif(to_vocabulary_format(cand_smiles), True)
         if i % 100 == 0:
             logging.info(f"{i}/{num_candidates} candidate motifs processed; Output motifs: {len(motifs)}")
 
@@ -126,6 +126,9 @@ def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> 
                  f"Size: {num_motifs}; "
                  f"Passed frequency test: {num_passed_freq_test}/{num_motifs}")
     return vocab_rows
+
+
+# TODO test that every motif SMILES in vocabulary is a canonical SMILES
 
 
 def _main():
