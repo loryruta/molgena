@@ -133,6 +133,18 @@ def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> 
     return vocab_rows
 
 
+def decompose_mol(mol_smiles: str, motif_vocab: MotifVocab) -> Set[str]:
+    motifs = set({})
+    candidates = extract_motif_candidates(mol_smiles)
+    for candidate in candidates:
+        if motif_vocab.has(candidate):
+            motifs.add(candidate)
+        else:
+            parts, _ = decompose_to_bonds_and_rings(candidate)
+            motifs.update(parts)
+    return motifs
+
+
 # TODO test that every motif SMILES in vocabulary is a canonical SMILES
 
 
