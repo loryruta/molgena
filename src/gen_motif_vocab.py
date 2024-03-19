@@ -65,20 +65,31 @@ def decompose_to_bonds_and_rings(mol_smiles: str) -> Tuple[Set[str], Tuple[int, 
 
     # Extract bonds that aren't part of a ring
     bonds = set()
+
+    rings_mol.BeginBatchEdit()
     for bond in mol.GetBonds():
         u = bond.GetBeginAtom()
         v = bond.GetEndAtom()
         if not bond.IsInRing():
             rings_mol.RemoveBond(u.GetIdx(), v.GetIdx())
+            if not u.IsInRing():
+                rings_mol.RemoveAtom(u.GetIdx())  # Atom already considered for the bond
+            if not v.IsInRing():
+                rings_mol.RemoveAtom(v.GetIdx())  # Atom already considered for the bond
 
             bond_mol = extract_mol_fragment(mol, {u.GetIdx(), v.GetIdx()})
             bond_smiles = Chem.MolToSmiles(bond_mol)
             bonds.add(bond_smiles)
+    rings_mol.CommitBatchEdit()
+
+    # By now, only rings should be left...
+    # for atom in rings_mol.GetAtoms():
+    #     assert atom.IsInRing()
 
     # Extract rings
     rings = set()
     for atom_indices in Chem.GetMolFrags(rings_mol):
-        ring_mol = extract_mol_fragment(mol, atom_indices)
+        ring_mol = extract_mol_fragment(rings_mol, atom_indices)
         ring_smiles = Chem.MolToSmiles(ring_mol)
         rings.add(ring_smiles)
 
