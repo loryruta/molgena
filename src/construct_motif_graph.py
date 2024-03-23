@@ -1,6 +1,7 @@
 from common import *
 import os
 from rdkit import Chem
+import pickle
 import networkx as nx
 from gen_motif_vocab import *
 from math import *
@@ -72,6 +73,12 @@ def construct_and_save_motif_graphs():
 
     started_at = time()
     logged_at = time()
+
+    num_samples = len(training_set)
+
+    print(f"Constructing motif graphs for {num_samples} training set samples...")
+
+    motif_graphs = []
     for mol_id, mol_smiles in training_set['smiles'].items():
         motif_graph = construct_motif_graph(mol_smiles, motif_vocab)
         motif_graphs.append(motif_graph)
