@@ -1,3 +1,4 @@
+import os
 from os import path
 from concurrent.futures import ThreadPoolExecutor
 import logging
@@ -17,10 +18,9 @@ ZINC_VALIDATION_SET_CSV = path.join(DATA_DIR, "zinc_validation_set.csv")
 ZINC_TEST_SET_CSV = path.join(DATA_DIR, "zinc_test_set.csv")
 
 DATASET_PATH = ZINC_DATASET_CSV  # TODO old name, delete
-VOCAB_PATH = path.join(DATA_DIR, "vocab.csv")  # TODO old, delete
 
 MOTIF_VOCAB_CSV = path.join(DATA_DIR, "motif_vocab.csv")
-MOTIF_GRAPH_PATH = path.join(DATA_DIR, "motif_graph.gml")
+MOTIF_GRAPHS_PKL = path.join(DATA_DIR, "motif_graphs.pkl")
 
 # ------------------------------------------------------------------------------------------------
 

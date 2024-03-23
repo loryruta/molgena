@@ -22,7 +22,7 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.Graph:
         if row is not None:
             # The candidate was a Motif as is (frequent enough in training set)
             motif_id = int(row['id'])
-            for atom in mol_from_smiles(candidate).GetAtoms():
+            for atom in Chem.MolFromSmiles(candidate).GetAtoms():
                 atom_clusters[atom.GetAtomMapNum()] = (motif_id, cluster_id)
             cluster_id += 1
         else:
@@ -59,8 +59,13 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.Graph:
     return motif_graph
 
 
-def construct_all_motif_graphs(write_file: bool):
-    """ Tests that motif graph can be constructed for all training set samples. """
+def construct_and_save_motif_graphs():
+    """ Constructs motif graphs for all training set samples; saves the final result to a .pkl file. """
+
+    if path.exists(MOTIF_GRAPHS_PKL):
+        in_ = input(f"File already exists \"{MOTIF_GRAPHS_PKL}\", overwrite? (y/N) ")
+        if in_.lower() != "y":
+            return 0
 
     training_set = pd.read_csv(ZINC_TRAINING_SET_CSV)
     motif_vocab = MotifVocab.load()
@@ -69,20 +74,26 @@ def construct_all_motif_graphs(write_file: bool):
     logged_at = time()
     for mol_id, mol_smiles in training_set['smiles'].items():
         motif_graph = construct_motif_graph(mol_smiles, motif_vocab)
-
-        # Save the motif graph to file (caching)!
-        if write_file:
-            nx.write_gml(motif_graph, motif_graph_gml_path(mol_id))
+        motif_graphs.append(motif_graph)
 
         if time() - logged_at > 5.0:
-            num_left = len(training_set) - (mol_id + 1)
+            num_left = num_samples - (mol_id + 1)
             time_left = num_left / ((mol_id + 1) / (time() - started_at))
-            logging.info(f"Constructed motif graph for {mol_id + 1}/{len(training_set)} molecules; "
+            logging.info(f"Constructed motif graph for {mol_id + 1}/{num_samples} molecules; "
                          f"Time left: {time_left:.1f}s, "
                          f"Directory size: ")
             logged_at = time()
 
-    logging.info("Constructed motif graphs for all training set molecules")
+    print("Constructed motif graphs for all training set molecules!")
+
+    print(f"Saving .pkl file: \"{MOTIF_GRAPHS_PKL}\"")
+
+    with open(MOTIF_GRAPHS_PKL, 'wb') as file:
+        pickle.dump(motif_graphs, file)
+
+    print(f"Done!")
+
+    return 0
 
 
 def visualize_motif_graph():
@@ -124,5 +135,5 @@ def visualize_motif_graph():
 
 
 if __name__ == "__main__":
-    visualize_motif_graph()
-    #construct_all_motif_graphs(write_file=False)
+    # visualize_motif_graph()
+    construct_and_save_motif_graphs()
