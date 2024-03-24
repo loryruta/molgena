@@ -148,7 +148,7 @@ def decompose_mol(mol_smiles: str, motif_vocab: MotifVocab) -> Set[str]:
     motifs = set({})
     candidates = extract_motif_candidates(mol_smiles)
     for candidate in candidates:
-        if motif_vocab.has(candidate):
+        if motif_vocab.has_smiles(candidate):
             motifs.add(candidate)
         else:
             parts, _ = decompose_to_bonds_and_rings(candidate)
