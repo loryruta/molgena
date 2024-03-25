@@ -1,18 +1,13 @@
 from common import *
-from torch.utils.data import Dataset
-from os import path
-import pandas as pd
-import networkx as nx
-from typing import *
-from mol_graph import create_mol_graph_from_smiles
-from construct_motif_graph import construct_motif_graph
-from tensor_graph import TensorGraph
 
-motif_vocab = pd.read_csv(MOTIF_VOCAB_CSV, index_col=['smiles'])  # TODO put it somewhere else (e.g. Dataset member)
+import pandas as pd
+from torch.utils.data import Dataset
 
 
 class MolDataset(Dataset):
-    """ A dataset stored in a pandas DataFrame with a "smiles" column. """
+    """ A dataset stored in a pandas DataFrame with a "smiles" column.
+    SMILES stored are not canonical and not said to be kekulized.
+    """
 
     def __init__(self, path_: str):
         self._df = pd.read_csv(path_)
@@ -20,13 +15,9 @@ class MolDataset(Dataset):
     def __len__(self):
         return len(self._df)
 
-    def __getitem__(self, i: int) -> Tuple[str, TensorGraph, nx.Graph]:
+    def __getitem__(self, i: int):
         mol_smiles = self._df.iloc[i]['smiles']
-        return (
-            mol_smiles,
-            create_mol_graph_from_smiles(mol_smiles),
-            construct_motif_graph(mol_smiles, motif_vocab)
-        )
+        return i, mol_smiles
 
 
 class ZincDataset(MolDataset):

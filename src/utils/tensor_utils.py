@@ -7,11 +7,15 @@ def exclusive_prefix_sum(x):
     return torch.cat([torch.tensor([0]), cum_sum[:-1]])
 
 
-def tensor_contains_mask(a: torch.Tensor, b: torch.Tensor) -> torch.BoolTensor:
-    """ Given two 1-dim tensors, returns a bool tensor of the same shape of `a`.
-     The i-th bool is `True` if the i-th element is contained in `b`. """
-    assert a.dim() == 1
-    assert b.dim() == 1
+def intersect(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    # Source: https://stackoverflow.com/a/65516153/7358682
+    combined = torch.cat((a.view(-1), b.view(-1)))
+    unique, counts = combined.unique(return_counts=True)
+    return unique[counts > 1].reshape(-1, a.shape[1])
+
+
+def cross_entropy(a: torch.Tensor, b: torch.Tensor):
+    return -torch.sum(a * torch.log(b))
 
 
 def num_model_params(model: nn.Module) -> int:

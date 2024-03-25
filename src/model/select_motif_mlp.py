@@ -44,13 +44,18 @@ class SelectMotifMlp(nn.Module):
         """
         :param partial_mol_reprs:
             The vector representations for the partial molecules under reconstruction.
+            Can be null for the first step of reconstruction.
         :param recon_mol_reprs:
             The vector representations for the molecules to reconstruct. Only required when reconstructing.
         """
         assert self._reconstruction_mode and recon_mol_reprs is not None
+        assert (self.partial_mol_reprs is not None) or (recon_mol_reprs is not None)
 
         if self._reconstruction_mode is None:
             recon_mol_reprs = self._zero_padding_vec  # Zero padding
+
+        if partial_mol_reprs is None:
+            partial_mol_reprs = self._zero_padding_vec  # Zero padding
 
         return self._mlp(
             torch.cat([partial_mol_reprs, recon_mol_reprs], dim=1)

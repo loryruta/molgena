@@ -5,7 +5,7 @@ import pandas as pd
 from typing import *
 from time import time
 from tensor_graph import TensorGraph
-from encode_mol import *
+from model.encode_mol import *
 
 
 class SelectMolAttachment(nn.Module):

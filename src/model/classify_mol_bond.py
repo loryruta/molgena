@@ -2,7 +2,7 @@ from common import *
 import torch
 from torch import nn
 from typing import *
-from encode_mol import EncodeMolMPN
+from model.encode_mol import EncodeMolMPN
 from tensor_graph import TensorGraph, batch_tensor_graphs
 from mol_graph import create_mol_graph_from_smiles
 from motif_vocab import MotifVocab
@@ -52,6 +52,8 @@ class ClassifyMolBond(nn.Module):
             A long tensor of shape (2, NC) indicating the bonds between mol_a and mol_b proposed to do.
             Every bond is already supposed to connect atoms of the same batch.
         """
+
+        # NC = num proposed bonds
 
         num_mol_a_atoms = mol_a_graphs.num_nodes()
         num_mol_a_bonds = mol_a_graphs.num_edges()

@@ -2,7 +2,7 @@ from common import *
 import torch
 from rdkit import Chem
 from rdkit.Chem import Draw
-from tensor_graph import TensorGraph
+from tensor_graph import TensorGraph, batch_tensor_graphs
 from typing import *
 
 
@@ -43,7 +43,7 @@ def _create_bond_features(bond) -> List[float]:
     return [bond_type]
 
 
-def create_mol_graph_from_smiles(smiles: str) -> TensorGraph:
+def create_mol_graph_from_smiles(smiles: str) -> TensorGraph:  # TODO rename to create_tensor_graph_from_smiles
     """ Parses the input SMILES string to a TensorGraph. """
 
     # Reference:
@@ -74,6 +74,12 @@ def create_mol_graph_from_smiles(smiles: str) -> TensorGraph:
     tensor_graph.edge_features = torch.tensor(bond_features, dtype=torch.float)
     tensor_graph.edges = torch.tensor(bonds, dtype=torch.long).t().contiguous()
     return tensor_graph
+
+
+def create_tensor_graph_from_smiles_list(smiles_list: List[str]) -> TensorGraph:
+    return batch_tensor_graphs([
+        create_mol_graph_from_smiles(smiles) for smiles in smiles_list
+    ])
 
 
 def _main():

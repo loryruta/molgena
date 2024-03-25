@@ -9,29 +9,41 @@ class MotifVocab:
     SMILES stored are canonical SMILES (not kekulized, kekulization is done on loading).
     """
 
+    _df_id: pd.DataFrame  # Dataframe indexed by `id` column
+    _df_smiles: pd.DataFrame  # Dataframe indexed by `smiles` column
+
     def __init__(self, path_: str):
-        self._df = pd.read_csv(path_, index_col=['smiles'])
+        self._df_id = pd.read_csv(path_, index_col=['id'])
+        self._df_smiles = pd.read_csv(path_, index_col=['smiles'])
 
-    @staticmethod
-    def _canon_format(smiles: str) -> str:
-        return Chem.CanonSmiles(clear_atommap(smiles))
+    def has_smiles(self, smiles: str) -> bool:
+        smiles, _ = canon_smiles(smiles)
+        return smiles in self._df_smiles.index
 
-    def has(self, smiles: str) -> bool:
-        return self._canon_format(smiles) in self._df.index
+    def at_id(self, id_: int):
+        """ Gets the row at the corresponding ID or throws. """
+        if id_ not in self._df_id.index:
+            raise KeyError(f"Motif ID {id_} not found in motif vocabulary")
+        return self._df_id.loc[id_]
+
+    def at_smiles(self, smiles: str):
+        """ Gets the row at the corresponding SMILES or throws. """
+        smiles, _ = canon_smiles(smiles)
+        if smiles not in self._df_smiles.index:
+            raise KeyError(f"SMILES \"{smiles}\" not in motif vocabulary")
+        return self._df_smiles.loc[smiles]
+
+    def at_smiles_or_null(self, smiles: str):
+        """ Gets the row at the corresponding SMILES. Returns null if not found. """
+        smiles, _ = canon_smiles(smiles)
+        return self._df_smiles.loc[smiles] if smiles in self._df_smiles.index else None
 
     def __iter__(self):
-        for _, row in self._df.iterrows():
+        for _, row in self._df_id.iterrows():
             yield row['smiles']
 
-    def get_or_null(self, smiles: str):
-        smiles = self._canon_format(smiles)
-        return self._df.loc[smiles] if smiles in self._df.index else None
-
-    def __getitem__(self, smiles: str):
-        smiles = self._canon_format(smiles)
-        if smiles not in self._df.index:
-            raise KeyError(f"SMILES \"{smiles}\" not in motif vocabulary")
-        return self._df.loc[smiles]
+    def __len__(self):
+        return len(self._df_id)
 
     @staticmethod
     def load():
