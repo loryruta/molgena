@@ -43,10 +43,17 @@ def read_output_order(mol: Chem.Mol) -> Tuple[List[int], List[int]]:
     if not mol.HasProp("_smilesAtomOutputOrder"):
         raise Exception("Property _smilesAtomOutputOrder not found; probably lacking call to Chem.MolToSmiles")
 
-    # For an unknown reason, the result is a string; e.g. '[1, 2, 18, 17, 16, ...]'
+    if not mol.HasProp("_smilesBondOutputOrder"):
+        raise Exception("Property _smilesBondOutputOrder not found; probably lacking call to Chem.MolToSmiles")
 
-    atom_order = list(map(int, mol.GetProp("_smilesAtomOutputOrder")[1:-2].split(",")))
-    bond_order = list(map(int, mol.GetProp("_smilesBondOutputOrder")[1:-2].split(",")))
+    def parse_prop(raw_prop: str) -> List[int]:
+        # For some unknown reason, the result is a string; e.g. '[1, 2, 18, 17, 16, ...]'
+        if len(raw_prop) == '' or raw_prop == '[]':
+            return []
+        return list(map(int, raw_prop[1:-2].split(",")))
+
+    atom_order = parse_prop(mol.GetProp("_smilesAtomOutputOrder"))
+    bond_order = parse_prop(mol.GetProp("_smilesBondOutputOrder"))
     return atom_order, bond_order
 
 

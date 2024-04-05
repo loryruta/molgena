@@ -46,13 +46,13 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
             info.smiles = candidate
             for atom in Chem.MolFromSmiles(candidate).GetAtoms():
                 atom_idx = atom.GetAtomMapNum()
-                assert atom_idx not in atom_clusters  # TODO an atom could be assigned to many clusters!
+                assert atom_idx not in atom_clusters  # An atom must not be assigned to multiple clusters!
                 atom_clusters[atom_idx] = info
                 mol_atom_cluster_atom_indices[atom_idx] = atom.GetIdx()
             next_cid += 1
         else:
             # The candidate must have been split in bonds and rings
-            parts, _ = decompose_to_bonds_and_rings(candidate)
+            parts = decompose_motif_candidate(candidate)
             for part in parts:
                 row = motif_vocab.at_smiles_or_null(part)
                 if row is None:
@@ -66,7 +66,7 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
                 info.smiles = part
                 for atom in Chem.MolFromSmiles(part).GetAtoms():
                     atom_idx = atom.GetAtomMapNum()
-                    assert atom_idx not in atom_clusters  # TODO an atom could be assigned to many clusters!
+                    assert atom_idx not in atom_clusters  # An atom must not be assigned to multiple clusters!
                     atom_clusters[atom_idx] = info
                     mol_atom_cluster_atom_indices[atom_idx] = atom.GetIdx()
                 next_cid += 1

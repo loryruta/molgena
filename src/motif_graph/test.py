@@ -60,7 +60,7 @@ def test_clear_atommap_output_order():
 
 
 def test_atom_output_order():
-    """ Tests the intended meaning of atom output order after canonicalization.
+    """ Tests the intended behavior of "atom output order" after canonicalization.
     That is, every entry is an index to the atom in the initial SMILES (before canonicalization):
 
     For example:
