@@ -10,13 +10,13 @@ class MolDataset(Dataset):
     """
 
     def __init__(self, path_: str):
-        self._df = pd.read_csv(path_)
+        self.df = pd.read_csv(path_)
 
     def __len__(self):
-        return len(self._df)
+        return len(self.df)
 
     def __getitem__(self, i: int):
-        mol_smiles = self._df.iloc[i]['smiles']
+        mol_smiles = self.df.iloc[i]['smiles']
         return i, mol_smiles
 
 

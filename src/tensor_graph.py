@@ -22,12 +22,21 @@ class TensorGraph:
     def num_edges(self):
         return len(self.edge_features)
 
+    def batch_size(self) -> int:
+        if self.batch_indices is None:
+            return 1 if self.num_nodes() > 0 else 0
+        return len(torch.unique(self.batch_indices))
+
     def validate(self):
         assert self.node_features is not None and len(self.node_features) == self.num_nodes()
         assert self.edge_features is not None and len(self.edge_features) == self.num_edges()
         assert self.edges is not None and len(self.edges) == self.num_edges()
         assert self.node_hiddens is None or len(self.node_hiddens) == self.num_nodes()
         assert self.edge_hiddens is None or len(self.edge_hiddens) == self.num_edges()
+
+    def create_hiddens(self, node_hidden_dim: int, edge_hidden_dim: int) -> None:
+        self.node_hiddens = cast(torch.FloatTensor, torch.zeros((self.num_nodes(), node_hidden_dim,)))
+        self.edge_hiddens = cast(torch.FloatTensor, torch.zeros((self.num_edges(), edge_hidden_dim,)))
 
     def to_torch_geometric(self) -> torch_geometric.data.Data:
         return torch_geometric.data.Data(

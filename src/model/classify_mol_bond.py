@@ -9,17 +9,19 @@ from motif_vocab import MotifVocab
 
 
 class ClassifyMolBond(nn.Module):
-    def __init__(self):
+    def __init__(self, **kwargs):
         super().__init__()
 
-        self._num_steps = 100  # TODO kwargs
-        self._atom_hidden_dim = 32  # TODO kwargs
-        self._bond_hidden_dim = 64  # TODO kwargs
+        self._num_steps = kwargs['num_steps']
+        self._atom_features_dim = kwargs['atom_features_dim']
+        self._bond_features_dim = kwargs['bond_features_dim']
+        self._atom_hidden_dim = kwargs['atom_hidden_dim']
+        self._bond_hidden_dim = kwargs['bond_hidden_dim']
 
         self._mol_mpn = EncodeMolMPN(  # Using the same MPN from EncodeMol
             num_steps=self._num_steps,
-            node_features_dim=5,  # TODO constant
-            edge_features_dim=1,  # TODO constant
+            node_features_dim=self._atom_features_dim,
+            edge_features_dim=self._bond_features_dim,
             node_hidden_dim=self._atom_hidden_dim,
             edge_hidden_dim=self._bond_hidden_dim,
         )
@@ -39,6 +41,12 @@ class ClassifyMolBond(nn.Module):
             nn.Softmax()
         )
 
+    @staticmethod
+    def _verify_proposed_bonds(a_batch_indices: torch.LongTensor,
+                               b_batch_indices: torch.LongTensor,
+                               proposed_bonds: torch.LongTensor):
+        assert (a_batch_indices[proposed_bonds[0]] == b_batch_indices[proposed_bonds[1]]).all()
+
     def forward(self, mol_a_graphs: TensorGraph, mol_b_graphs: TensorGraph, proposed_bonds: torch.LongTensor):
         """
         Given the molecular graphs of two molecules and a list of proposed bonds between the two, classifies every bond
@@ -50,8 +58,12 @@ class ClassifyMolBond(nn.Module):
             The batched molecular graphs of the second molecule (e.g. the motif).
         :param proposed_bonds:
             A long tensor of shape (2, NC) indicating the bonds between mol_a and mol_b proposed to do.
-            Every bond is already supposed to connect atoms of the same batch.
+            Values are inter-batch indices that must connect atoms of the same batch. TODO could be verified
         """
+
+        assert proposed_bonds.ndim == 2 and proposed_bonds.shape[0] == 2
+
+        self._verify_proposed_bonds(mol_a_graphs.batch_indices, mol_b_graphs.batch_indices, proposed_bonds)
 
         # NC = num proposed bonds
 
@@ -60,8 +72,9 @@ class ClassifyMolBond(nn.Module):
         num_mol_b_bonds = mol_b_graphs.num_edges()
         num_proposed_bonds = proposed_bonds.shape[1]  # NC
 
-        # Prepare the additional bonds to add to the merged graphs using the proposed bonds, and their opposite (because
-        # our graph is directional)
+        # Create a graph where mol_a and mol_b are connected using proposed_bond
+
+        # Since we want mol_a and mol_b to lie in the same graph, we need to offset mol_b atom indices
         proposed_bonds_1 = proposed_bonds[1] + num_mol_a_atoms
         additional_bonds = torch.cat([
             torch.stack([  # Straight edges
@@ -72,8 +85,8 @@ class ClassifyMolBond(nn.Module):
                 proposed_bonds_1,
                 proposed_bonds[0]
             ])
-        ])
-        num_additional_bonds = len(additional_bonds)
+        ], dim=1)  # (2, N)
+        num_additional_bonds = additional_bonds.shape[1]
 
         # Create the graph on which to run message passing: it's formed by merging the mol_a graph with the mol_b graph
         # and adding the proposed bonds
@@ -82,13 +95,14 @@ class ClassifyMolBond(nn.Module):
         merged_graphs.edge_features = torch.cat([
             mol_a_graphs.edge_features,
             mol_b_graphs.edge_features,
-            torch.full((num_additional_bonds, 1), 999)  # 999 is a special edge feature value
+            # Use a negative value of -1000.0 for the feature, to indicate it's an artificial bond
+            torch.full((num_additional_bonds, 1), -1000.0)
         ])
         merged_graphs.edges = torch.cat([
             mol_a_graphs.edges,
             mol_b_graphs.edges + num_mol_a_atoms,
             additional_bonds
-        ])
+        ], dim=1)
         merged_graphs.batch_indices = torch.cat([mol_a_graphs.batch_indices, mol_b_graphs.batch_indices])
         merged_graphs.node_hiddens = torch.zeros((len(merged_graphs.node_features), self._atom_hidden_dim))
         merged_graphs.edge_hiddens = torch.zeros((len(merged_graphs.edge_features), self._bond_hidden_dim))
@@ -98,7 +112,7 @@ class ClassifyMolBond(nn.Module):
 
         proposed_bonds_offset = num_mol_a_bonds + num_mol_b_bonds  # Offset to retrieve proposed bonds from the concat
         proposed_bond_hiddens = \
-            merged_graphs.edge_hiddens[proposed_bonds_offset:num_proposed_bonds] + \
+            merged_graphs.edge_hiddens[proposed_bonds_offset:proposed_bonds_offset + num_proposed_bonds] + \
             merged_graphs.edge_hiddens[proposed_bonds_offset + num_proposed_bonds:]  # Reversed edges
 
         mlp_input = torch.cat([
@@ -108,17 +122,10 @@ class ClassifyMolBond(nn.Module):
         ], dim=1)  # (NC, NH+NH+EH)
         mlp_output = self._classify_bond_type_mlp(mlp_input)  # (NC, 4)
 
-        # Output:
-        # A long tensor of shape (NC, 3) where:
-        # - dim 0: the number of classified bonds
-        # - dim 1: the mol_a atom index, the mol_b atom index and the bond type
-        return torch.cat([
-            proposed_bonds.t(),  # (NC, 2)
-            torch.argmax(mlp_output, dim=1)  # (NC, 1)
-        ], dim=1)
+        return mlp_output
 
 
-def _main():
+def _main():  # TODO remove
     import pandas as pd
     import random
 
@@ -136,7 +143,7 @@ def _main():
     ])
 
     def sample(n: int, max_k: int = 1000):
-        """ Samples _at most_ K different elements from a list ranging from 0 to N. """
+        """ Samples _at most_ K different elements from a list ranging from 0 to N - 1. """
         num_samples = random.randint(1, min(max_k, n))
         seq = list(range(n))
         return random.sample(seq, min(num_samples, n))

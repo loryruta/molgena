@@ -75,8 +75,14 @@ def create_mol_graph_from_smiles(smiles: str) -> TensorGraph:  # TODO rename to 
     tensor_graph.edges = torch.tensor(bonds, dtype=torch.long).t().contiguous()
     return tensor_graph
 
-
+# TODO remove for tensorize_smiles_list
 def create_tensor_graph_from_smiles_list(smiles_list: List[str]) -> TensorGraph:
+    return batch_tensor_graphs([
+        create_mol_graph_from_smiles(smiles) for smiles in smiles_list
+    ])
+
+
+def tensorize_smiles_list(smiles_list: List[str]) -> TensorGraph:
     return batch_tensor_graphs([
         create_mol_graph_from_smiles(smiles) for smiles in smiles_list
     ])
