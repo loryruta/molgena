@@ -64,7 +64,7 @@ def test_encode_mol(mol_dataset):
         'node_hidden_dim': MOL_REPR_DIM,
         'edge_hidden_dim': 50
     })
-    mol_repr = module(mol_graph)
+    mol_repr = module(mol_graph, BATCH_SIZE)
     assert mol_repr.shape == (BATCH_SIZE, MOL_REPR_DIM)
     logging.info("Inference done!")
 
