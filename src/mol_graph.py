@@ -43,8 +43,11 @@ def _create_bond_features(bond) -> List[float]:
     return [bond_type]
 
 
-def create_mol_graph_from_smiles(smiles: str) -> TensorGraph:  # TODO rename to create_tensor_graph_from_smiles
-    """ Parses the input SMILES string to a TensorGraph. """
+# TODO rename to create_tensor_graph_from_smiles
+def create_mol_graph_from_smiles(smiles: Optional[str]) -> TensorGraph:
+    """ Parses the input SMILES string to a TensorGraph.
+    Not: SMILES is allowed to be None; if such, or empty string, an empty TensorGraph is returned.
+    """
 
     # Reference:
     # https://pytorch-geometric.readthedocs.io/en/latest/get_started/introduction.html
@@ -55,25 +58,27 @@ def create_mol_graph_from_smiles(smiles: str) -> TensorGraph:  # TODO rename to 
     bond_features = []
     bonds = []
 
-    mol = Chem.MolFromSmiles(smiles)
+    if smiles:  # smiles != "" and smiles is not None
+        mol = Chem.MolFromSmiles(smiles)
 
-    for atom in mol.GetAtoms():
-        atom.SetAtomMapNum(atom.GetIdx())
-        atom_features.append(_create_atom_features(atom))
+        for atom in mol.GetAtoms():
+            atom.SetAtomMapNum(atom.GetIdx())
+            atom_features.append(_create_atom_features(atom))
 
-    for bond in mol.GetBonds():
-        u = bond.GetBeginAtomIdx()
-        v = bond.GetEndAtomIdx()
-        bonds.append([u, v])
-        bonds.append([v, u])
+        for bond in mol.GetBonds():
+            u = bond.GetBeginAtomIdx()
+            v = bond.GetEndAtomIdx()
+            bonds.append([u, v])
+            bonds.append([v, u])
 
-        tmp = _create_bond_features(bond)
-        bond_features.extend([tmp, tmp])
+            tmp = _create_bond_features(bond)
+            bond_features.extend([tmp, tmp])
 
     tensor_graph.node_features = torch.tensor(atom_features, dtype=torch.float)
     tensor_graph.edge_features = torch.tensor(bond_features, dtype=torch.float)
     tensor_graph.edges = torch.tensor(bonds, dtype=torch.long).t().contiguous()
     return tensor_graph
+
 
 # TODO remove for tensorize_smiles_list
 def create_tensor_graph_from_smiles_list(smiles_list: List[str]) -> TensorGraph:

@@ -1,6 +1,7 @@
 import torch
 import torch_geometric
 from typing import *
+from utils.tensor_utils import *
 
 
 class TensorGraph:
@@ -23,9 +24,35 @@ class TensorGraph:
         return len(self.edge_features)
 
     def batch_size(self) -> int:
+        """ Counts the number of unique batch indices.
+        If batch indices isn't provided, returns 1 if the graph isn't empty. """
         if self.batch_indices is None:
             return 1 if self.num_nodes() > 0 else 0
-        return len(torch.unique(self.batch_indices))
+        return len(torch.unique_consecutive(self.batch_indices))
+
+    def batch_locations(self, batch_size: Optional[int] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """ Gets the indices, number of nodes and node offsets, of every graph within the batch.
+        If `batch_size` is given counts and offsets will always be `batch_size`. Empty batch elements are zero padded.
+        """
+
+        # TODO unit test!
+
+        if self.batch_indices is None:
+            raise Exception("batch_indices not set")
+
+        indices, counts = torch.unique_consecutive(self.batch_indices, return_counts=True)
+        offsets = exclusive_prefix_sum(counts)
+
+        if batch_size is not None:
+            padded_counts = torch.zeros((batch_size,), dtype=torch.int64)
+            padded_counts.scatter_(0, indices, counts)
+
+            padded_offsets = torch.zeros((batch_size,), dtype=torch.int64)
+            padded_offsets.scatter_(0, indices, offsets)
+
+            return indices, padded_counts, padded_offsets
+
+        return indices, counts, offsets
 
     def validate(self):
         assert self.node_features is not None and len(self.node_features) == self.num_nodes()
@@ -45,6 +72,15 @@ class TensorGraph:
             edge_attr=self.edge_features
         )  # TODO batch_indices
 
+    def __str__(self):
+        return (f"TensorGraph[\n"
+                f"  node_features={self.node_features.shape}\n"
+                f"  edge_features={self.edge_features.shape}\n"
+                f"  edges={self.edges.shape}\n"
+                f"  batch_indices={None if self.batch_indices is None else self.batch_indices.shape}\n"
+                f"  node_hiddens={None if self.node_hiddens is None else self.node_hiddens.shape}\n"
+                f"  edge_hiddens={None if self.edge_hiddens is None else self.edge_hiddens.shape}\n"
+                f"]")
 
 def batch_tensor_graphs(graphs: List[TensorGraph]):
     """ Given a list of TensorGraph, batch them together producing one TensorGraph. """
