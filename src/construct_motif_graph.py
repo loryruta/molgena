@@ -104,18 +104,18 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
             continue
 
         # Convert bond atom indices; first to candidate -relative indices, then to motif -relative indices
-        cluster_a1 = mol_atom_cluster_atom_indices[a1]
-        cluster_a2 = mol_atom_cluster_atom_indices[a2]
-        motif_a1 = cluster_motif_indices[cluster1.cid].index(cluster_a1)
-        motif_a2 = cluster_motif_indices[cluster2.cid].index(cluster_a2)
+        cluster_a1 = mol_atom_cluster_atom_indices[a1]  # Cluster -relative index
+        cluster_a2 = mol_atom_cluster_atom_indices[a2]  # Cluster -relative index
+        motif_a1 = cluster_motif_indices[cluster1.cid].index(cluster_a1)  # Motif -relative index
+        motif_a2 = cluster_motif_indices[cluster2.cid].index(cluster_a2)  # Motif -relative index
 
         # !!! DEBUG ONLY: verify that -relative indices match the atom !!!
-        cluster_mol1 = Chem.MolFromSmiles(cluster1.smiles)
-        cluster_mol2 = Chem.MolFromSmiles(cluster2.smiles)
-        motif_mol1 = Chem.MolFromSmiles(motif_vocab.at_id(cluster1.mid)['smiles'])
-        motif_mol2 = Chem.MolFromSmiles(motif_vocab.at_id(cluster2.mid)['smiles'])
-        assert atom_equals(motif_mol1.GetAtomWithIdx(motif_a1), cluster_mol1.GetAtomWithIdx(cluster_a1))
-        assert atom_equals(motif_mol2.GetAtomWithIdx(motif_a2), cluster_mol2.GetAtomWithIdx(cluster_a2))
+        # cluster_mol1 = Chem.MolFromSmiles(cluster1.smiles)
+        # cluster_mol2 = Chem.MolFromSmiles(cluster2.smiles)
+        # motif_mol1 = Chem.MolFromSmiles(motif_vocab.at_id(cluster1.mid)['smiles'])
+        # motif_mol2 = Chem.MolFromSmiles(motif_vocab.at_id(cluster2.mid)['smiles'])
+        # assert atom_equals(motif_mol1.GetAtomWithIdx(motif_a1), cluster_mol1.GetAtomWithIdx(cluster_a1))
+        # assert atom_equals(motif_mol2.GetAtomWithIdx(motif_a2), cluster_mol2.GetAtomWithIdx(cluster_a2))
 
         cid1 = cluster1.cid
         cid2 = cluster2.cid
@@ -133,21 +133,25 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
     return motif_graph
 
 
-def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph, motif_vocab: MotifVocab) -> str:
-    """ Converts the input motif graph to SMILES. """
+def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph,
+                                  motif_vocab: MotifVocab) -> Tuple[str, Dict[Tuple[int, int], int]]:
+    """ Converts the input motif graph to SMILES.
+
+    :return:
+        A tuple (generated_smiles, cluster_atom_map), where cluster_atom_map is a mapping from (cluster_id, motif_atom_index) to atom_index.
+        It basically tells where an atom, from the original Motif graph, went in the final molecule.
+    """
 
     new_mol = Chem.RWMol()
 
-    # (Cluster ID, Motif atom ID) -> New molecule atom ID
-    # Where atom at cluster, motif ID can be found in the new molecule
+    # (Cluster ID, Motif -relative index) -> Atom index
+    # Given cluster and motif -relative index pointing to an atom, tells the generated molecule
     cluster_atom_map = {}
 
     # Add clusters to the final molecule
     for cid in motif_graph.nodes:
         motif_id = motif_graph.nodes[cid]['motif_id']
         motif_smiles = motif_vocab.at_id(motif_id)['smiles']
-
-        print(f"Cluster {cid} -> Motif {motif_smiles}")
 
         motif_mol = Chem.MolFromSmiles(motif_smiles)
         Chem.Kekulize(motif_mol)  # No aromatic bonds when building...
@@ -166,8 +170,6 @@ def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph, motif_vocab: MotifVoc
     for cid1, cid2 in motif_graph.edges:
         attachment = motif_graph.edges[cid1, cid2]['attachment']
 
-        print(f"cid1: {cid1}, cid2: {cid2}, attachment: {attachment}")
-
         for (motif_a1, motif_a2), bond_type in attachment.items():
             new_a1 = cluster_atom_map[(cid1, motif_a1)]
             new_a2 = cluster_atom_map[(cid2, motif_a2)]
@@ -175,7 +177,7 @@ def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph, motif_vocab: MotifVoc
                 new_mol.AddBond(new_a1, new_a2, bond_type)
 
     smiles = Chem.MolToSmiles(new_mol)
-    return canon_smiles(smiles)[0]
+    return canon_smiles(smiles)[0], cluster_atom_map
 
 
 def construct_and_save_motif_graphs():

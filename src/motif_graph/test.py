@@ -110,9 +110,24 @@ def test_construction():
 def test_motif_graph_conversion():
     """ Tests that motif graph is constructed and converted back to the original SMILES. """
     motif_vocab = MotifVocab.load()
+    training_set = ZincDataset.training_set()
 
-    for i, smiles in enumerate(SAMPLE_SMILES):
-        print(f"{i + 1}/{len(SAMPLE_SMILES)} Converting {smiles}...")
-        motif_graph = construct_motif_graph(smiles, motif_vocab)
-        converted_smiles = convert_motif_graph_to_smiles(motif_graph, motif_vocab)
-        print(f"{i + 1}/{len(SAMPLE_SMILES)} Original: {smiles}; Re-converted: {converted_smiles}")
+    samples = training_set
+    num_samples = len(training_set)
+
+    num_failed_conversions = 0
+
+    for i, smiles in samples:
+        print(f"{i + 1}/{num_samples} Converting {smiles}...")
+
+        try:
+            motif_graph = construct_motif_graph(smiles, motif_vocab)
+            converted_smiles, _ = convert_motif_graph_to_smiles(motif_graph, motif_vocab)
+            print(f"{i + 1}/{num_samples} Original: {smiles}; Re-converted: {converted_smiles}")
+
+        except Exception as ex:
+            num_failed_conversions += 1
+            print(f"ERROR {i + 1}/{num_samples} Conversion error for SMILES ID {i}: \"{repr(ex)}\"",
+                  file=sys.stderr)
+
+    print(f"Conversion finished; Failed conversions: {num_failed_conversions}/{num_samples}")
