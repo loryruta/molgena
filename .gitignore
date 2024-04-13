@@ -6,3 +6,6 @@ __pycache__
 venv
 
 /third_party
+
+# Ignore Jupyter notebooks as they take too much space!
+*.ipynb
