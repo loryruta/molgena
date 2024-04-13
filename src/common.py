@@ -36,7 +36,7 @@ def _on_import():
     print(f"Default PyTorch device to: \"{selected_dev}\"")
 
     # Setup logging
-    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', encoding='utf-8', level=logging.DEBUG)
+    logging.basicConfig(format='%(asctime)s [%(levelname)-5s] %(message)s', encoding='utf-8', level=logging.DEBUG)
 
 
 _on_import()
