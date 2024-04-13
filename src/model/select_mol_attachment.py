@@ -20,7 +20,7 @@ class SelectMolAttachment(nn.Module):
         self._mol_b_node_hidden_dim = kwargs['mol_b_node_hidden_dim']
         self._mol_b_edge_hidden_dim = kwargs['mol_b_edge_hidden_dim']
 
-        self._mol_mpn = EncodeMolMPN(
+        self._encode_mol_mpn = EncodeMolMPN(
             num_steps=self._num_mpn_steps,
             node_features_dim=self._mol_b_node_features_dim,
             edge_features_dim=self._mol_b_edge_features_dim,
@@ -52,8 +52,6 @@ class SelectMolAttachment(nn.Module):
             Values higher than a threshold (hyperparameter) are considered to be selected as candidates.
         """
 
-        assert mol_a_reprs.shape[0] == mol_b_graphs.batch_size()
-
         # B = Batch size
         # AM = `A` molecule representation dim
         # BA = `B` molecule total atom count
@@ -63,7 +61,7 @@ class SelectMolAttachment(nn.Module):
         b_batch_indices = mol_b_graphs.batch_indices
 
         # Run message passing on B molecular graphs to build up hidden vectors (same of EncodeMol)
-        self._mol_mpn(mol_b_graphs)
+        self._encode_mol_mpn(mol_b_graphs)
 
         # Pair B atoms with the A molecular representation, B atom and molecular representation is concatenated to
         # obtain MLP input, and then run inference

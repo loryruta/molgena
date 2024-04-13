@@ -104,8 +104,7 @@ class ClassifyMolBond(nn.Module):
             additional_bonds
         ], dim=1)
         merged_graphs.batch_indices = torch.cat([mol_a_graphs.batch_indices, mol_b_graphs.batch_indices])
-        merged_graphs.node_hiddens = torch.zeros((len(merged_graphs.node_features), self._atom_hidden_dim))
-        merged_graphs.edge_hiddens = torch.zeros((len(merged_graphs.edge_features), self._bond_hidden_dim))
+        merged_graphs.create_hiddens(self._atom_hidden_dim, self._bond_hidden_dim)
 
         # Run message passing
         self._mol_mpn(merged_graphs)

@@ -40,9 +40,8 @@ class EncodeMolMPN(nn.Module):
 
         W2_x_uv = self.W2.matmul(mol_graph.edge_features.t()).t()  # (|E|, EH,)
 
-        tmp = torch.zeros((mol_graph.num_nodes(), self.edge_hidden_dim,))
-        wu_hidden_sum = \
-            torch.scatter_reduce(tmp, 0, to_nodes.unsqueeze(1), mol_graph.edge_hiddens, reduce='sum')  # (|V|, EH,)
+        wu_hidden_sum = torch.zeros((mol_graph.num_nodes(), self.edge_hidden_dim,))
+        wu_hidden_sum.scatter_reduce(0, to_nodes.unsqueeze(1), mol_graph.edge_hiddens, reduce='sum')  # (|V|, EH,)
         wu_hidden_sum = torch.index_select(wu_hidden_sum, 0, from_nodes)  # (|E|, EH,)
         W3_wu_eh_sum = self.W3.matmul(wu_hidden_sum.t()).t()  # (|E|, EH,)
 
