@@ -95,6 +95,23 @@ class Labels:
         assert self.batched_bond_labels is not None
 
 
+class Loss:
+    l1_: torch.FloatTensor  # SelectMotifMlp
+    l21: torch.FloatTensor  # SelectMolAttachment(partial_mol, motif_graph)
+    l22: torch.FloatTensor  # SelectMolAttachment(motif_graph, partial_mol)
+    l3_: torch.FloatTensor  # ClassifyMolBond
+
+    def validate(self):
+        assert self.l1_.ndim == 0
+        assert self.l21.ndim == 0
+        assert self.l22.ndim == 0
+        assert self.l3_.ndim == 0
+
+    def total(self):
+        """ Compute the total loss as the sum of the individual losses (each already batch mean). """
+        return self.l1_ + self.l21 + self.l22 + self.l3_
+
+
 class MolgenaReconstructTask:
     _encode_mol: EncodeMol
     _select_motif_mlp: SelectMotifMlp
@@ -152,7 +169,7 @@ class MolgenaReconstructTask:
                            list(self._select_motif_mlp.parameters()) + \
                            list(self._select_mol_attachment.parameters()) + \
                            list(self._classify_mol_bond.parameters())
-        #logging.info(f"Total num parameters: {len(self._parameters)}")
+        # logging.info(f"Total num parameters: {len(self._parameters)}")
 
         self._optimizer = torch.optim.Adam(self._parameters, lr=1e-3)
         logging.info(f"Optimizer ready")
@@ -260,8 +277,8 @@ class MolgenaReconstructTask:
           - `batched_bond_labels` for ClassifyMolBond
         """
 
-        #assert self._partial_mol_graphs
-        #assert self._motif_mol_graphs
+        # assert self._partial_mol_graphs
+        # assert self._motif_mol_graphs
 
         # Create TensorGraph of partial molecules
 
@@ -391,26 +408,25 @@ class MolgenaReconstructTask:
         pred.validate()
         return pred
 
-    def _compute_loss(self, pred: Predictions, labels: Labels) -> torch.FloatTensor:
+    def _compute_loss(self, pred: Predictions, labels: Labels) -> Loss:
         """ Given the predictions and labels, computes the final loss.
         The final loss is composed of 4 contributions:
-          - L1  = loss for SelectMotifMlp
+          - L1_ = loss for SelectMotifMlp
           - L21 = loss for SelectMolAttachment(motif, partial_mol)
           - L22 = loss for SelectMolAttachment(partial_mol, motif)
-          - L3  = loss for ClassifyMolBond
+          - L3_ = loss for ClassifyMolBond
         """
 
-        l1 = cross_entropy(pred.batched_motif_distr, labels.batched_motif_distr)
+        loss = Loss()
+        loss.l1_ = cross_entropy(pred.batched_motif_distr, labels.batched_motif_distr, dim=1).mean()
+        loss.l21 = cross_entropy(pred.batched_partial_mol_candidates, labels.batched_partial_mol_candidates, dim=0).mean()
+        loss.l22 = cross_entropy(pred.batched_motif_candidates, labels.batched_motif_candidates, dim=0).mean()
+        loss.l3_ = cross_entropy(pred.batched_bond_types, labels.batched_bond_labels, dim=0).mean()
 
-        l21 = cross_entropy(pred.batched_partial_mol_candidates, labels.batched_partial_mol_candidates)
-        l22 = cross_entropy(pred.batched_motif_candidates, labels.batched_motif_candidates)
-
-        l3 = cross_entropy(pred.batched_bond_types, labels.batched_bond_labels)
-
-        loss = (l1 + l21 + l22 + l3).mean()
+        loss.validate()  # Debug
         return loss
 
-    def _train_step(self, batch) -> None:
+    def _train_step(self, batch_idx: int, batch) -> None:
         mol_smiles_list, motif_graphs, mol_graphs = batch
 
         # Sample partial molecules using the complete motif graphs, and annotate them
@@ -431,19 +447,23 @@ class MolgenaReconstructTask:
         self._optimizer.zero_grad()
 
         pred = self._run_inference(batch)
+
         loss = self._compute_loss(pred, labels)
-        loss.backward()
+        loss.total().backward()
 
         self._optimizer.step()
 
-        logging.debug(f"Inference run; Loss: {loss.item()}")
+        num_batches = len(self._training_set) // self._batch_size
+        logging.debug(f"Batch {batch_idx:>3}/{num_batches:>3} Inference run; "
+                      f"L1_: {loss.l1_.item():.5f}, "
+                      f"L21: {loss.l21.item():.5f}, "
+                      f"L22: {loss.l22.item():.5f}, "
+                      f"L3_: {loss.l3_.item():.5f}; "
+                      f"Total: {loss.total().item():.5f}")
 
     def _train_epoch(self) -> None:
-        num_batches = len(self._training_set) // self._batch_size
         for i, batch in enumerate(self._training_dataloader):
-            self._train_step(batch)
-
-            logging.info(f"{i:>3}/{num_batches:>3} batch done")
+            self._train_step(i, batch)
         # TODO save checkpoint at the end of an epoch?
 
     def train(self):

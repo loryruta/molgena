@@ -14,8 +14,8 @@ def intersect(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return unique[counts > 1].reshape(-1, a.shape[1])
 
 
-def cross_entropy(a: torch.Tensor, b: torch.Tensor):
-    return -torch.sum(a * torch.log(b))
+def cross_entropy(p: torch.Tensor, y: torch.Tensor, dim: int = 0):
+    return -torch.sum(y * torch.log(p), dim=dim)
 
 
 def num_model_params(model: nn.Module) -> int:
