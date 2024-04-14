@@ -130,7 +130,11 @@ def clear_atommap(mol_smiles: str) -> str:
 def canon_smiles(smiles: str) -> Tuple[str, Tuple[List[int], List[int]]]:
     """ Given a SMILES, returns a unique version for it (clears atommap!).
     Useful for fetching SMILES in Motif vocabulary. """
+
     mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise Exception(f"Invalid SMILES: \"{smiles}\"")
+
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(0)  # Clear atom map
     out_smiles = Chem.MolToSmiles(mol)  # Canonize

@@ -137,6 +137,9 @@ class MolgenaReconstructTask:
         self._training_set = ZincDataset.training_set()
         logging.info(f"Training set loaded; Num molecules: {len(self._training_set)}")
 
+        self._test_set = ZincDataset.test_set()
+        logging.info(f"Test set loaded; Num molecules: {len(self._test_set)}")
+
         self._motif_vocab = MotifVocab.load()
         logging.info(f"Motif vocabulary loaded; Num motifs: {len(self._motif_vocab)}")
 
@@ -146,6 +149,8 @@ class MolgenaReconstructTask:
         assert len(self._training_set) == len(self._motif_graphs)
 
         self._batch_size = 256
+        self._test_batch_size = 1024
+
         self._training_dataloader = DataLoader(self._training_set, batch_size=self._batch_size,
                                                collate_fn=lambda batch: self._collate_fn(batch))
 
@@ -190,8 +195,6 @@ class MolgenaReconstructTask:
             A Labels object containing raw labels (see Labels for details).
             Returned labels aren't ready to be used, they have to be tensorized with _tensorize_labels.
         """
-        assert len(motif_graphs) == self._batch_size
-
         # Labels
         labels = Labels()
         labels.partial_mol_smiles_list = []
@@ -282,19 +285,21 @@ class MolgenaReconstructTask:
 
         # Create TensorGraph of partial molecules
 
+        batch_size = len(labels.partial_mol_smiles_list)
+
         # SelectMotifMlp labels:
         # A distribution over motifs where the i-th motif is 1 if it should be selected as the next motif
-        labels.batched_motif_distr = torch.zeros((self._batch_size, self._num_motifs + 1))
+        labels.batched_motif_distr = torch.zeros((batch_size, self._num_motifs + 1))
         labels.batched_motif_distr[:, labels.next_motif_ids] = 1
 
         # SelectMolAttachment(motif, partial_mol) labels:
         # A (NC,) distribution over partial_mol atoms (all batches) where the i-th atom is 1 if it should be a candidate
-        _, _, partial_mol_batch_offsets = self._partial_mol_graphs.batch_locations(self._batch_size)
+        _, _, partial_mol_batch_offsets = self._partial_mol_graphs.batch_locations(batch_size)
         batched_partial_mol_candidates = torch.zeros(size=(self._partial_mol_graphs.num_nodes(),), dtype=torch.float32)
 
         # SelectMolAttachment(partial_mol, motif) labels:
         # A (NC,) distribution over motif atoms (all batches) where the i-th atom is 1 if it should be a candidate
-        _, _, motif_batch_offsets = self._motif_mol_graphs.batch_locations(self._batch_size)
+        _, _, motif_batch_offsets = self._motif_mol_graphs.batch_locations(batch_size)
         batched_motif_candidates = torch.zeros(size=(self._motif_mol_graphs.num_nodes(),), dtype=torch.float32)
 
         # ClassifyMolBond labels:
@@ -356,6 +361,8 @@ class MolgenaReconstructTask:
 
         mol_smiles_list, motif_graphs, mol_graphs = batch
 
+        batch_size = len(mol_smiles_list)
+
         self._mol_graphs = create_tensor_graph_from_smiles_list(mol_smiles_list)
         assert self._partial_mol_graphs
         assert self._motif_mol_graphs
@@ -371,9 +378,9 @@ class MolgenaReconstructTask:
         self._partial_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
         self._motif_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
 
-        self._mol_reprs = self._encode_mol(self._mol_graphs, self._batch_size)
-        self._partial_mol_reprs = self._encode_mol(self._partial_mol_graphs, self._batch_size)
-        self._motif_mol_reprs = self._encode_mol(self._motif_mol_graphs, self._batch_size)
+        self._mol_reprs = self._encode_mol(self._mol_graphs, batch_size)
+        self._partial_mol_reprs = self._encode_mol(self._partial_mol_graphs, batch_size)
+        self._motif_mol_reprs = self._encode_mol(self._motif_mol_graphs, batch_size)
 
         # Inference SelectMotifMlp
         pred.batched_motif_distr = \
@@ -419,7 +426,8 @@ class MolgenaReconstructTask:
 
         loss = Loss()
         loss.l1_ = cross_entropy(pred.batched_motif_distr, labels.batched_motif_distr, dim=1).mean()
-        loss.l21 = cross_entropy(pred.batched_partial_mol_candidates, labels.batched_partial_mol_candidates, dim=0).mean()
+        loss.l21 = \
+            cross_entropy(pred.batched_partial_mol_candidates, labels.batched_partial_mol_candidates, dim=0).mean()
         loss.l22 = cross_entropy(pred.batched_motif_candidates, labels.batched_motif_candidates, dim=0).mean()
         loss.l3_ = cross_entropy(pred.batched_bond_types, labels.batched_bond_labels, dim=0).mean()
 
@@ -432,13 +440,13 @@ class MolgenaReconstructTask:
         # Sample partial molecules using the complete motif graphs, and annotate them
         labels = self._sample_labels(motif_graphs)
 
+        self._partial_mol_graphs = tensorize_smiles_list(labels.partial_mol_smiles_list)
         motif_smiles_list = []
         for mid in labels.next_motif_ids:
             motif_smiles = ""
             if mid != self._end_motif_idx:
                 motif_smiles = self._motif_vocab.at_id(mid)['smiles']
             motif_smiles_list.append(motif_smiles)
-        self._partial_mol_graphs = tensorize_smiles_list(labels.partial_mol_smiles_list)
         self._motif_mol_graphs = tensorize_smiles_list(motif_smiles_list)
 
         self._tensorize_labels(labels)  # Tensorize for practical usage
@@ -461,10 +469,55 @@ class MolgenaReconstructTask:
                       f"L3_: {loss.l3_.item():.5f}; "
                       f"Total: {loss.total().item():.5f}")
 
+    def _test(self):
+        batch_size = self._test_batch_size
+
+        test_smiles_list = self._test_set.df.sample(n=batch_size)['smiles'].tolist()
+        motif_graphs = [construct_motif_graph(smiles, self._motif_vocab) for smiles in test_smiles_list]
+        mol_graphs = create_tensor_graph_from_smiles_list(test_smiles_list)
+
+        batch = (test_smiles_list, motif_graphs, mol_graphs)
+
+        labels = self._sample_labels(motif_graphs)
+
+        # TODO don't use member vars (self._partial_mol_graphs, self._motif_mol_graphs, ...)
+        self._partial_mol_graphs = tensorize_smiles_list(labels.partial_mol_smiles_list)
+        motif_smiles_list = []
+        for mid in labels.next_motif_ids:
+            motif_smiles = ""
+            if mid != self._end_motif_idx:
+                motif_smiles = self._motif_vocab.at_id(mid)['smiles']
+            motif_smiles_list.append(motif_smiles)
+        self._motif_mol_graphs = tensorize_smiles_list(motif_smiles_list)
+        self._tensorize_labels(labels)
+
+        with torch.no_grad():
+            pred = self._run_inference(batch)
+
+        l1_accuracy = (
+                              torch.argmax(pred.batched_motif_distr, dim=1) == torch.argmax(labels.batched_motif_distr,
+                                                                                            dim=1)
+                      ).sum() / batch_size
+
+        l21_accuracy = iou(pred.batched_partial_mol_candidates > 0.5, labels.batched_partial_mol_candidates > 0.5)
+        l22_accuracy = iou(pred.batched_motif_candidates > 0.5, labels.batched_motif_candidates > 0.5)
+
+        l3_accuracy = (
+                              torch.argmax(pred.batched_bond_types, dim=1) == torch.argmax(labels.batched_bond_labels,
+                                                                                           dim=1)
+                      ).sum() / batch_size
+
+        logging.info(f"Test run; Accuracy: "
+                     f"SelectMotif: {l1_accuracy:.3f}, "
+                     f"SelectMolAttachmentAB: {l21_accuracy:.3f}, "
+                     f"SelectMolAttachmentBA: {l22_accuracy:.3f}, "
+                     f"ClassifyMolBond: {l3_accuracy:.3f}")
+
     def _train_epoch(self) -> None:
         for i, batch in enumerate(self._training_dataloader):
             self._train_step(i, batch)
         # TODO save checkpoint at the end of an epoch?
+        self._test()
 
     def train(self):
         logging.info("Training started...")

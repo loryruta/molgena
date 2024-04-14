@@ -21,3 +21,10 @@ def cross_entropy(p: torch.Tensor, y: torch.Tensor, dim: int = 0):
 def num_model_params(model: nn.Module) -> int:
     """ Returns the number of trainable parameters. """
     return sum(param.numel() for param in model.parameters())
+
+
+def iou(a: torch.Tensor, b: torch.Tensor, dim: int = 0):
+    """ Calculates intersection Over Union (Jaccard index) of the two input tensors. """
+    assert a.shape == b.shape
+    assert a.dtype == b.dtype == torch.bool
+    return (a & b).sum(dim=dim) / (a | b).sum(dim=dim)
