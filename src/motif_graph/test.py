@@ -131,3 +131,18 @@ def test_motif_graph_conversion():
                   file=sys.stderr)
 
     print(f"Conversion finished; Failed conversions: {num_failed_conversions}/{num_samples}")
+
+
+def test_failed_motif_graph_identity():
+    """ Tests that the SMILES can't perform Motif graph identity
+    (i.e. can't be converted to a Motif graph and re-converted back). """
+
+    smiles = "O=C([O-])CCCn1c(=O)c2ccc3c(=O)[nH]c(=O)c4ccc(c1=O)c2c34"
+    # assert smiles in ZincDataset.test_set().df['smiles'].tolist()
+
+    motif_vocab = MotifVocab.load()
+
+    motif_graph = construct_motif_graph(smiles, motif_vocab)
+
+    with pytest.raises(Exception):
+        convert_motif_graph_to_smiles(motif_graph, motif_vocab)
