@@ -28,31 +28,26 @@ class SelectMotifMlp(nn.Module):
 
         self._mlp = nn.Sequential(
             nn.Linear(self.mol_repr_dim + self.mol_repr_dim, 256),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(256, 256),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(256, 512),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(512, 1024),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(1024, self.num_motifs),
-            nn.Softmax(dim=1)
+            # Output are unnormalized logits, fed to F.cross_entropy (pytorch)
         )
 
-    def forward(self, partial_mol_reprs: Optional[torch.Tensor], recon_mol_reprs: Optional[torch.Tensor]):
+    def forward(self, partial_mol_reprs: torch.Tensor, recon_mol_reprs: Optional[torch.Tensor]):
         """
         :param partial_mol_reprs:
             The vector representations for the partial molecules under reconstruction.
-            Can be null for the first step of reconstruction.
+            Should be a zero tensor for empty partial molecules (initial reconstruction step).
         :param recon_mol_reprs:
             The vector representations for the molecules to reconstruct. Only required when reconstructing.
         """
         assert (not self.reconstruction_mode) or (recon_mol_reprs is not None)
-        assert (partial_mol_reprs is not None) or (recon_mol_reprs is not None)
-
-        if partial_mol_reprs is None:
-            batch_size = recon_mol_reprs.shape[0]
-            partial_mol_reprs = torch.zeros((batch_size, self.mol_repr_dim), dtype=torch.float32)  # Zero padding
 
         if not self.reconstruction_mode:
             batch_size = partial_mol_reprs.shape[0]
