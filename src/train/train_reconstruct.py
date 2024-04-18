@@ -10,46 +10,15 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from mol_dataset import ZincDataset
-from construct_motif_graph import *
 from motif_graph import *
 from mol_graph import *
+from motif_vocab import MotifVocab
+from utils.misc_utils import *
 from utils.tensor_utils import *
 from model.encode_mol import EncodeMol
 from model.select_motif_mlp import SelectMotifMlp
 from model.select_mol_attachment import SelectMolAttachment
 from model.classify_mol_bond import ClassifyMolBond
-
-MOL_REPR_DIM = 256  # The embedding size for the molecule
-
-PARAMS = {  # TODO put somewhere else? (e.g. a configuration file)
-    'encode_mol': {
-        'num_steps': 20,
-        'node_features_dim': 5,
-        'edge_features_dim': 1,
-        'node_hidden_dim': MOL_REPR_DIM,
-        'edge_hidden_dim': 64
-    },
-    'select_motif_mlp': {
-        'mol_repr_dim': MOL_REPR_DIM,
-        'num_motifs': 4331 + 1,  # Vocabulary size + END token
-        'reconstruction_mode': True
-    },
-    'select_mol_attachment': {
-        'num_mpn_steps': 8,
-        'mol_a_repr_dim': MOL_REPR_DIM,
-        'mol_b_node_features_dim': 5,
-        'mol_b_edge_features_dim': 1,
-        'mol_b_node_hidden_dim': 128,
-        'mol_b_edge_hidden_dim': 64,
-    },
-    'classify_mol_bond': {
-        'num_steps': 8,
-        'atom_features_dim': 5,
-        'bond_features_dim': 1,
-        'atom_hidden_dim': 128,
-        'bond_hidden_dim': 64
-    }
-}
 
 
 class Predictions:
@@ -143,7 +112,7 @@ class MolgenaReconstructTask:
         self._motif_vocab = MotifVocab.load()
         logging.info(f"Motif vocabulary loaded; Num motifs: {len(self._motif_vocab)}")
 
-        self._motif_graphs = load_motif_graphs()
+        self._motif_graphs = load_motif_graphs_pkl(TRAINING_MOTIF_GRAPHS_PKL)
         logging.info(f"Motif graphs loaded; Num motif graphs: {len(self._motif_graphs)}")
 
         assert len(self._training_set) == len(self._motif_graphs)
@@ -158,16 +127,16 @@ class MolgenaReconstructTask:
         self._end_motif_idx = self._num_motifs
 
         # Loading model layers
-        self._encode_mol = EncodeMol(**params['encode_mol'])
+        self._encode_mol = EncodeMol(params['encode_mol'])
         logging.info(f"EncodeMol loaded; Num parameters: {num_model_params(self._encode_mol)}")
 
-        self._select_motif_mlp = SelectMotifMlp(**params['select_motif_mlp'])
+        self._select_motif_mlp = SelectMotifMlp(params['select_motif_mlp'])
         logging.info(f"SelectMotifMlp loaded; Num parameters: {num_model_params(self._select_motif_mlp)}")
 
-        self._select_mol_attachment = SelectMolAttachment(**params['select_mol_attachment'])
+        self._select_mol_attachment = SelectMolAttachment(params['select_mol_attachment'])
         logging.info(f"SelectMolAttachment loaded; Num parameters: {num_model_params(self._select_mol_attachment)}")
 
-        self._classify_mol_bond = ClassifyMolBond(**params['classify_mol_bond'])
+        self._classify_mol_bond = ClassifyMolBond(params['classify_mol_bond'])
         logging.info(f"ClassifyMolBond loaded; Num parameters: {num_model_params(self._classify_mol_bond)}")
 
         self._parameters = list(self._encode_mol.parameters()) + \
@@ -550,9 +519,9 @@ class MolgenaReconstructTask:
 
             logging.info(f"Test run; Accuracy: "
                          f"SelectMotif: {m1_accuracy:.3f}, ")
-                         # f"SelectMolAttachmentAB: {l21_accuracy:.3f}, "
-                         # f"SelectMolAttachmentBA: {l22_accuracy:.3f}, "
-                         # f"ClassifyMolBond: {l3_accuracy:.3f}")
+            # f"SelectMolAttachmentAB: {l21_accuracy:.3f}, "
+            # f"SelectMolAttachmentBA: {l22_accuracy:.3f}, "
+            # f"ClassifyMolBond: {l3_accuracy:.3f}")
 
     def _load_checkpoint(self):
         checkpoint = torch.load(self._checkpoint_path)
@@ -605,7 +574,18 @@ class MolgenaReconstructTask:
 
 
 def _main():
-    trainer = MolgenaReconstructTask(PARAMS)
+    from argparse import ArgumentParser
+    from pathlib import Path
+
+    parser = ArgumentParser()
+    parser.add_argument("--config", type=Path, required=True)
+
+    params = parser.parse_args()
+
+    logging.info(f"Loading config file: {params.config}")
+    config_params = load_json_with_vars(params.config)
+
+    trainer = MolgenaReconstructTask(config_params)
     trainer.train()
 
 

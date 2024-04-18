@@ -5,4 +5,6 @@
 
 # Tasks
 /**/checkpoints/*
+/**/checkpoints-*/*
 /**/runs/*
+/**/runs-*/*

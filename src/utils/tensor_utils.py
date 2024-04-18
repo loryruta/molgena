@@ -1,3 +1,4 @@
+from typing import *
 import torch
 from torch import nn
 
@@ -28,3 +29,14 @@ def iou(a: torch.Tensor, b: torch.Tensor, dim: int = 0):
     assert a.shape == b.shape
     assert a.dtype == b.dtype == torch.bool
     return (a & b).sum(dim=dim) / (a | b).sum(dim=dim)
+
+
+def create_mlp(in_features_dim: int, out_features_dim: int, hidden_layers_dim: List[int],
+               non_linearity_func: Optional[nn.Module] = nn.ReLU()) -> nn.Sequential:
+    layers_dim = [in_features_dim] + hidden_layers_dim + [out_features_dim]
+    layers = nn.Sequential()
+    for i in range(0, len(layers_dim) - 1):
+        layers.append(nn.Linear(layers_dim[i], layers_dim[i + 1]))
+        if non_linearity_func is not None:
+            layers.append(non_linearity_func)
+    return layers

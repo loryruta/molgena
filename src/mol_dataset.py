@@ -26,19 +26,19 @@ class ZincDataset(MolDataset):
 
     @staticmethod
     def all():
-        return ZincDataset(ZINC_DATASET_CSV)
+        return ZincDataset(DATASET_CSV)
 
     @staticmethod
     def training_set():
-        return ZincDataset(ZINC_TRAINING_SET_CSV)
+        return ZincDataset(TRAINING_CSV)
 
     @staticmethod
     def validation_set():
-        return ZincDataset(ZINC_VALIDATION_SET_CSV)
+        return ZincDataset(VALIDATION_CSV)
 
     @staticmethod
     def test_set():
-        return ZincDataset(ZINC_TEST_SET_CSV)
+        return ZincDataset(TEST_CSV)
 
 
 def _main():

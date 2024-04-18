@@ -1,5 +1,6 @@
 from common import *
 import math
+from typing import *
 import torch
 from torch import nn
 from tensor_graph import TensorGraph
@@ -18,54 +19,20 @@ class EncodeMolMPN(nn.Module):
     node_hidden_dim: int
     edge_hidden_dim: int
 
-    def __init__(self, **kwargs):
+    def __init__(self, params: Dict[str, Any]):
         super().__init__()
 
-        self.num_steps = kwargs['num_steps']
-        self.node_features_dim = kwargs['node_features_dim']
-        self.edge_features_dim = kwargs['edge_features_dim']
-        self.node_hidden_dim = kwargs['node_hidden_dim']
-        self.edge_hidden_dim = kwargs['edge_hidden_dim']
+        self.num_steps = params['num_steps']
+        self.node_features_dim = params['node_features_dim']
+        self.edge_features_dim = params['edge_features_dim']
+        self.node_hidden_dim = params['node_hidden_dim']
+        self.edge_hidden_dim = params['edge_hidden_dim']
 
-        # node_features_dim -> edge_hidden_dim
-        self.W1 = nn.Sequential(
-            nn.Linear(self.node_features_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, self.edge_hidden_dim),
-            nn.ReLU()
-        )
-
-        # edge_features_dim -> edge_hidden_dim
-        self.W2 = nn.Sequential(
-            nn.Linear(self.edge_features_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, self.edge_hidden_dim),
-            nn.ReLU()
-        )
-
-        # edge_hidden_dim -> edge_hidden_dim
-        self.W3 = nn.Sequential(
-            nn.Linear(self.edge_hidden_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, self.edge_hidden_dim),
-            nn.ReLU()
-        )
-
-        # node_features_dim -> node_hidden_dim
-        self.U1 = nn.Sequential(
-            nn.Linear(self.node_features_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, self.node_hidden_dim),
-            nn.ReLU()
-        )
-
-        # edge_hidden_dim -> node_hidden_dim
-        self.U2 = nn.Sequential(
-            nn.Linear(self.edge_hidden_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, self.node_hidden_dim),
-            nn.ReLU()
-        )
+        self.W1 = create_mlp(self.node_features_dim, self.edge_hidden_dim, params["W1"])
+        self.W2 = create_mlp(self.edge_features_dim, self.edge_hidden_dim, params["W2"])
+        self.W3 = create_mlp(self.edge_hidden_dim, self.edge_hidden_dim, params["W3"])
+        self.U1 = create_mlp(self.node_features_dim, self.node_hidden_dim, params["U1"])
+        self.U2 = create_mlp(self.edge_hidden_dim, self.node_hidden_dim, params["U2"])
 
     def forward(self, mol_graph: TensorGraph) -> None:
         # Reference:

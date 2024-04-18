@@ -1,4 +1,5 @@
 from common import *
+from typing import *
 import torch
 from torch import nn
 from tensor_graph import TensorGraph
@@ -8,12 +9,12 @@ from model.encode_mol_mpn import EncodeMolMPN
 class EncodeMol(nn.Module):
     """ Encodes the input batched molecular graph, to a batch of embedding vectors. """
 
-    def __init__(self, **kwargs):
+    def __init__(self, params: Dict[str, Any]):
         super().__init__()
 
-        self._node_hidden_dim = kwargs['node_hidden_dim']
+        self._node_hidden_dim = params['node_hidden_dim']
 
-        self._encode_mol_mpn = EncodeMolMPN(**kwargs)
+        self._encode_mol_mpn = EncodeMolMPN(params)
 
     def forward(self, mol_graph: TensorGraph, batch_size: int):
         """

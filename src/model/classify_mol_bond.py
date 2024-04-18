@@ -7,25 +7,20 @@ from tensor_graph import TensorGraph
 
 
 class ClassifyMolBond(nn.Module):
-    def __init__(self, **kwargs):
+    def __init__(self, params: Dict[str, Any]):
         super().__init__()
 
-        self._num_steps = kwargs['num_steps']
-        self._atom_features_dim = kwargs['atom_features_dim']
-        self._bond_features_dim = kwargs['bond_features_dim']
-        self._atom_hidden_dim = kwargs['atom_hidden_dim']
-        self._bond_hidden_dim = kwargs['bond_hidden_dim']
+        self._mol_mpn = EncodeMolMPN(params['mpn'])
 
-        self._mol_mpn = EncodeMolMPN(  # Using the same MPN from EncodeMol
-            num_steps=self._num_steps,
-            node_features_dim=self._atom_features_dim,
-            edge_features_dim=self._bond_features_dim,
-            node_hidden_dim=self._atom_hidden_dim,
-            edge_hidden_dim=self._bond_hidden_dim,
-        )
+        self._node_hidden_dim = self._mol_mpn.node_hidden_dim
+        self._edge_hidden_dim = self._mol_mpn.edge_hidden_dim
 
         self._classify_bond_type_mlp = nn.Sequential(
-            nn.Linear(self._atom_hidden_dim + self._bond_hidden_dim + self._atom_hidden_dim, 128),
+            nn.Linear(
+                self._mol_mpn.node_hidden_dim +
+                self._mol_mpn.edge_hidden_dim +
+                self._mol_mpn.node_hidden_dim,
+                128),
             nn.ReLU(),
             nn.Linear(128, 256),
             nn.ReLU(),
@@ -102,7 +97,7 @@ class ClassifyMolBond(nn.Module):
             additional_bonds
         ], dim=1)
         merged_graphs.batch_indices = torch.cat([mol_a_graphs.batch_indices, mol_b_graphs.batch_indices])
-        merged_graphs.create_hiddens(self._atom_hidden_dim, self._bond_hidden_dim)
+        merged_graphs.create_hiddens(self._node_hidden_dim, self._edge_hidden_dim)
 
         # Run message passing
         self._mol_mpn(merged_graphs)

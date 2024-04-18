@@ -2,6 +2,7 @@ from common import *
 import torch
 from torch import nn
 from typing import *
+from utils.tensor_utils import *
 
 
 class SelectMotifMlp(nn.Module):
@@ -19,25 +20,20 @@ class SelectMotifMlp(nn.Module):
     num_motifs: int
     reconstruction_mode: bool
 
-    def __init__(self, **kwargs):
+    def __init__(self, params: Dict[str, Any]):
         super().__init__()
 
-        self.mol_repr_dim = kwargs['mol_repr_dim']
-        self.num_motifs = kwargs['num_motifs']
-        self.reconstruction_mode = kwargs['reconstruction_mode']
+        self.mol_repr_dim = params['mol_repr_dim']
+        self.num_motifs = params['num_motifs']
+        self.reconstruction_mode = params['reconstruction_mode']
 
-        self._mlp = nn.Sequential(
-            nn.Linear(self.mol_repr_dim + self.mol_repr_dim, 256),
-            nn.LeakyReLU(),
-            nn.Linear(256, 256),
-            nn.LeakyReLU(),
-            nn.Linear(256, 512),
-            nn.LeakyReLU(),
-            nn.Linear(512, 1024),
-            nn.LeakyReLU(),
-            nn.Linear(1024, self.num_motifs),
-            # Output are unnormalized logits, fed to F.cross_entropy (pytorch)
+        self._mlp = create_mlp(
+            self.mol_repr_dim + self.mol_repr_dim,
+            self.num_motifs,
+            params["hidden_layers"],
+            nn.LeakyReLU()
         )
+        # Output logits must be _unnormalized_ to be fed to F.cross_entropy (pytorch)
 
     def forward(self, partial_mol_reprs: torch.Tensor, recon_mol_reprs: Optional[torch.Tensor]):
         """
