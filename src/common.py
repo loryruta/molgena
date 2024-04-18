@@ -22,6 +22,12 @@ DATASET_PATH = ZINC_DATASET_CSV  # TODO old name, delete
 MOTIF_VOCAB_CSV = path.join(DATA_DIR, "motif_vocab.csv")
 MOTIF_GRAPHS_PKL = path.join(DATA_DIR, "motif_graphs.pkl")
 
+RUNS_DIR = path.join(DATA_DIR, "runs")
+RUNS_RECON_DIR = path.join(RUNS_DIR, "reconstruct")
+
+CHECKPOINTS_DIR = path.join(DATA_DIR, "checkpoints")
+
+
 # ------------------------------------------------------------------------------------------------
 
 # process_pool = multiprocess.Pool()

@@ -3,9 +3,12 @@ import logging
 from typing import *
 import pandas as pd
 import networkx as nx
-import random
+from random import Random
 import torch
+import torch.nn.functional as F
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from mol_dataset import ZincDataset
 from construct_motif_graph import *
 from motif_graph import *
@@ -20,7 +23,7 @@ MOL_REPR_DIM = 256  # The embedding size for the molecule
 
 PARAMS = {  # TODO put somewhere else? (e.g. a configuration file)
     'encode_mol': {
-        'num_steps': 15,
+        'num_steps': 20,
         'node_features_dim': 5,
         'edge_features_dim': 1,
         'node_hidden_dim': MOL_REPR_DIM,
@@ -76,11 +79,11 @@ class Labels:
 
     # Raw labels
     partial_mol_smiles_list: List[str]
-    next_motif_ids: List[int]  # Labels for SelectMotifMlp
+    next_motif_ids: List[int]
     bond_labels: List[List[Tuple[int, int, int]]]  # Labels for SelectMolAttachment and ClassifyMolBond
 
     # Tensorized labels
-    batched_motif_distr: torch.FloatTensor  # Labels for SelectMotifMlp
+    next_motif_labels: torch.LongTensor  # Labels for SelectMotifMlp
     batched_partial_mol_candidates: torch.FloatTensor  # Labels for SelectMolAttachment(partial_mol, motif)
     batched_motif_candidates: torch.FloatTensor  # Labels for SelectMolAttachment(motif, partial_mol)
     batched_bond_labels: torch.FloatTensor  # Labels for ClassifyMolBond
@@ -88,8 +91,7 @@ class Labels:
     def validate(self):
         # TODO more detailed validation
         batch_size = len(self.partial_mol_smiles_list)
-        assert len(self.next_motif_ids) == batch_size
-        assert self.batched_motif_distr is not None
+        assert self.next_motif_labels.shape == (batch_size,)
         assert self.batched_partial_mol_candidates is not None
         assert self.batched_motif_candidates is not None
         assert self.batched_bond_labels is not None
@@ -101,15 +103,13 @@ class Loss:
     l22: torch.FloatTensor  # SelectMolAttachment(motif_graph, partial_mol)
     l3_: torch.FloatTensor  # ClassifyMolBond
 
+    total_loss: torch.FloatTensor
+
     def validate(self):
         assert self.l1_.ndim == 0
         assert self.l21.ndim == 0
         assert self.l22.ndim == 0
         assert self.l3_.ndim == 0
-
-    def total(self):
-        """ Compute the total loss as the sum of the individual losses (each already batch mean). """
-        return self.l1_ + self.l21 + self.l22 + self.l3_
 
 
 class MolgenaReconstructTask:
@@ -171,13 +171,24 @@ class MolgenaReconstructTask:
         logging.info(f"ClassifyMolBond loaded; Num parameters: {num_model_params(self._classify_mol_bond)}")
 
         self._parameters = list(self._encode_mol.parameters()) + \
-                           list(self._select_motif_mlp.parameters()) + \
-                           list(self._select_mol_attachment.parameters()) + \
-                           list(self._classify_mol_bond.parameters())
-        # logging.info(f"Total num parameters: {len(self._parameters)}")
+                           list(self._select_motif_mlp.parameters())  # + \
+        # list(self._select_mol_attachment.parameters()) + \
+        # list(self._classify_mol_bond.parameters())
+        logging.info(f"Total num parameters: {sum([param.numel() for param in self._parameters])}")
 
-        self._optimizer = torch.optim.Adam(self._parameters, lr=1e-3)
+        self._optimizer = torch.optim.Adam(self._parameters, lr=0.001)
+        self._lr_scheduler = CosineAnnealingLR(self._optimizer, T_max=50)
         logging.info(f"Optimizer ready")
+
+        self._writer = SummaryWriter(log_dir=RUNS_RECON_DIR)
+        self._writer_step = 0
+
+        self._epoch = 0
+
+        self._checkpoint_path = path.join(CHECKPOINTS_DIR, "recon_checkpoint.pt")
+        if path.exists(self._checkpoint_path):
+            logging.info(f"Found checkpoint: \"{self._checkpoint_path}\"")
+            self._load_checkpoint()
 
     def _collate_fn(self, raw_batch: List[Tuple[int, str]]) -> Tuple[List[str], List[nx.Graph], TensorGraph]:
         mol_smiles_list = [mol_smiles for _, mol_smiles in raw_batch]
@@ -201,15 +212,18 @@ class MolgenaReconstructTask:
         labels.next_motif_ids = []
         labels.bond_labels = []
 
+        # SEED = 23
+        rand = Random()  # Random(SEED + 321)
+
         # Iterate over every batch item
         for i, motif_graph in enumerate(motif_graphs):
             motif_subgraph_indices = sample_motif_subgraph(motif_graph)
 
-            next_cluster_id: Optional[int] = None
+            next_cluster_id: Optional[int]
 
             if not motif_subgraph_indices:
                 # Partial molecule is empty, next cluster is uniformly sampled
-                next_cluster_id = random.randint(0, len(motif_graph.nodes) - 1)
+                next_cluster_id = rand.randint(0, len(motif_graph.nodes) - 1)
             else:
                 neighbors = set({})
                 for cluster in motif_subgraph_indices:
@@ -221,7 +235,7 @@ class MolgenaReconstructTask:
                     next_cluster_id = None
                 else:
                     # We have a list of neighbors that could be selected as next, take one randomly
-                    next_cluster_id = random.choice(list(neighbors))
+                    next_cluster_id = rand.choice(list(neighbors))
 
             # Full partial molecule (generation ended)
             if next_cluster_id is None:
@@ -266,15 +280,12 @@ class MolgenaReconstructTask:
 
             labels.bond_labels.append(local_bond_labels)
 
-            if len(local_bond_labels) > 1:
-                print(f"ELEMENT {i}; BOND LABELS: {local_bond_labels}")
-
         return labels
 
-    def _tensorize_labels(self, labels: Labels) -> None:
+    def _tensorize_labels(self, labels: Labels):
         """ Tensorizes the given labels to be used for computing the final loss.
         What is computed are mainly 4 tensors:
-          - `batched_motif_distr` for SelectMotifMlp
+          - `next_motif_labels` for SelectMotifMlp
           - `batched_partial_mol_candidates` for SelectMolAttachment(motif, partial_mol)
           - `batched_motif_candidates` for SelectMolAttachment(partial_mol, motif)
           - `batched_bond_labels` for ClassifyMolBond
@@ -287,10 +298,8 @@ class MolgenaReconstructTask:
 
         batch_size = len(labels.partial_mol_smiles_list)
 
-        # SelectMotifMlp labels:
-        # A distribution over motifs where the i-th motif is 1 if it should be selected as the next motif
-        labels.batched_motif_distr = torch.zeros((batch_size, self._num_motifs + 1))
-        labels.batched_motif_distr[:, labels.next_motif_ids] = 1
+        # SelectMotifMlp labels
+        labels.next_motif_labels = torch.tensor(labels.next_motif_ids, dtype=torch.long)
 
         # SelectMolAttachment(motif, partial_mol) labels:
         # A (NC,) distribution over partial_mol atoms (all batches) where the i-th atom is 1 if it should be a candidate
@@ -391,28 +400,29 @@ class MolgenaReconstructTask:
         # - empty motif (END token drawn)
 
         # Inference SelectMolAttachment
-        node_hidden_dim, edge_hidden_dim = self._params['select_mol_attachment']['mol_b_node_hidden_dim'], \
-            self._params['select_mol_attachment']['mol_b_edge_hidden_dim']
-
-        self._motif_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-        pred.batched_motif_candidates = self._select_mol_attachment(self._partial_mol_reprs, self._motif_mol_graphs)
-
-        self._partial_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-        pred.batched_partial_mol_candidates = \
-            self._select_mol_attachment(self._motif_mol_reprs, self._partial_mol_graphs)
+        # TODO one thing at a time :)
+        # node_hidden_dim, edge_hidden_dim = self._params['select_mol_attachment']['mol_b_node_hidden_dim'], \
+        #     self._params['select_mol_attachment']['mol_b_edge_hidden_dim']
+        #
+        # self._motif_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
+        # pred.batched_motif_candidates = self._select_mol_attachment(self._partial_mol_reprs, self._motif_mol_graphs)
+        #
+        # self._partial_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
+        # pred.batched_partial_mol_candidates = \
+        #     self._select_mol_attachment(self._motif_mol_reprs, self._partial_mol_graphs)
 
         # Inference ClassifyMolBond
-        node_hidden_dim, edge_hidden_dim = self._params['classify_mol_bond']['atom_hidden_dim'], \
-            self._params['classify_mol_bond']['bond_hidden_dim']
-
-        self._partial_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-        self._motif_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-
-        pred.batched_bond_types = \
-            self._classify_mol_bond(self._partial_mol_graphs, self._motif_mol_graphs, self._bond_classification_input)
-
+        # TODO one thing at a time :)
+        # node_hidden_dim, edge_hidden_dim = self._params['classify_mol_bond']['atom_hidden_dim'], \
+        #     self._params['classify_mol_bond']['bond_hidden_dim']
         #
-        pred.validate()
+        # self._partial_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
+        # self._motif_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
+        #
+        # pred.batched_bond_types = \
+        #     self._classify_mol_bond(self._partial_mol_graphs, self._motif_mol_graphs, self._bond_classification_input)
+
+        # pred.validate()
         return pred
 
     def _compute_loss(self, pred: Predictions, labels: Labels) -> Loss:
@@ -425,13 +435,21 @@ class MolgenaReconstructTask:
         """
 
         loss = Loss()
-        loss.l1_ = cross_entropy(pred.batched_motif_distr, labels.batched_motif_distr, dim=1).mean()
-        loss.l21 = \
-            cross_entropy(pred.batched_partial_mol_candidates, labels.batched_partial_mol_candidates, dim=0).mean()
-        loss.l22 = cross_entropy(pred.batched_motif_candidates, labels.batched_motif_candidates, dim=0).mean()
-        loss.l3_ = cross_entropy(pred.batched_bond_types, labels.batched_bond_labels, dim=0).mean()
+        loss.l1_ = F.cross_entropy(pred.batched_motif_distr, labels.next_motif_labels)
+        loss.l21 = torch.tensor(0)
+        loss.l22 = torch.tensor(0)
+        loss.l3_ = torch.tensor(0)
 
-        loss.validate()  # Debug
+        # TODO one thing at a time :)
+        # loss.l21 = \
+        #     cross_entropy(pred.batched_partial_mol_candidates, labels.batched_partial_mol_candidates, dim=0).mean()
+        # loss.l22 = \
+        #     cross_entropy(pred.batched_motif_candidates, labels.batched_motif_candidates, dim=0).mean()
+        # loss.l3_ = \
+        #     cross_entropy(pred.batched_bond_types, labels.batched_bond_labels, dim=1).mean()
+
+        loss.total_loss = loss.l1_
+
         return loss
 
     def _train_step(self, batch_idx: int, batch) -> None:
@@ -451,23 +469,39 @@ class MolgenaReconstructTask:
 
         self._tensorize_labels(labels)  # Tensorize for practical usage
 
+        torch.autograd.set_detect_anomaly(True)
+
+        self._encode_mol.train()
+        self._select_motif_mlp.train()
+        self._select_mol_attachment.train()
+        self._classify_mol_bond.train()
+
         # The actual training step, inference the model and compute the loss using the labels
         self._optimizer.zero_grad()
 
         pred = self._run_inference(batch)
 
         loss = self._compute_loss(pred, labels)
-        loss.total().backward()
+        loss.total_loss.backward()
 
         self._optimizer.step()
 
+        # lr = self._optimizer.param_groups[0]['lr']
+        lr = self._lr_scheduler.get_last_lr()[0]
+        self._lr_scheduler.step()
+
+        # Update tensorboard
+        self._writer.add_scalar("select_motif_mlp/loss", loss.l1_, self._writer_step)
+
+        # Log
         num_batches = len(self._training_set) // self._batch_size
         logging.debug(f"Batch {batch_idx:>3}/{num_batches:>3} Inference run; "
-                      f"L1_: {loss.l1_.item():.5f}, "
-                      f"L21: {loss.l21.item():.5f}, "
-                      f"L22: {loss.l22.item():.5f}, "
-                      f"L3_: {loss.l3_.item():.5f}; "
-                      f"Total: {loss.total().item():.5f}")
+                      f"L1_: {loss.l1_.item()}, "
+                      f"L21: {loss.l21.item():.8f}, "
+                      f"L22: {loss.l22.item():.8f}, "
+                      f"L3_: {loss.l3_.item():.8f}, "
+                      f"Total loss: {loss.total_loss.item():.5f}, "
+                      f"LR: {lr:.7f}")
 
     def _test(self):
         batch_size = self._test_batch_size
@@ -491,43 +525,83 @@ class MolgenaReconstructTask:
         self._motif_mol_graphs = tensorize_smiles_list(motif_smiles_list)
         self._tensorize_labels(labels)
 
+        self._encode_mol.eval()
+        self._select_motif_mlp.eval()
+        self._select_mol_attachment.eval()
+        self._classify_mol_bond.eval()
+
         with torch.no_grad():
             pred = self._run_inference(batch)
 
-        l1_accuracy = (
-                              torch.argmax(pred.batched_motif_distr, dim=1) == torch.argmax(labels.batched_motif_distr,
-                                                                                            dim=1)
-                      ).sum() / batch_size
+            tmp = torch.argmax(pred.batched_motif_distr, dim=1) == torch.argmax(labels.next_motif_ids, dim=1)
+            m1_accuracy = tmp.sum() / batch_size
 
-        l21_accuracy = iou(pred.batched_partial_mol_candidates > 0.5, labels.batched_partial_mol_candidates > 0.5)
-        l22_accuracy = iou(pred.batched_motif_candidates > 0.5, labels.batched_motif_candidates > 0.5)
+            # Update tensorboard
+            self._writer.add_scalar("select_motif_mlp/accuracy", m1_accuracy, self._writer_step)
 
-        l3_accuracy = (
-                              torch.argmax(pred.batched_bond_types, dim=1) == torch.argmax(labels.batched_bond_labels,
-                                                                                           dim=1)
-                      ).sum() / batch_size
+            # l21_accuracy = iou(pred.batched_partial_mol_candidates > 0.5, labels.batched_partial_mol_candidates > 0.5)
+            # l22_accuracy = iou(pred.batched_motif_candidates > 0.5, labels.batched_motif_candidates > 0.5)
+            #
+            # l3_accuracy = (
+            #                       torch.argmax(pred.batched_bond_types, dim=1) == torch.argmax(
+            #                   labels.batched_bond_labels,
+            #                   dim=1)
+            #               ).sum() / batch_size
 
-        logging.info(f"Test run; Accuracy: "
-                     f"SelectMotif: {l1_accuracy:.3f}, "
-                     f"SelectMolAttachmentAB: {l21_accuracy:.3f}, "
-                     f"SelectMolAttachmentBA: {l22_accuracy:.3f}, "
-                     f"ClassifyMolBond: {l3_accuracy:.3f}")
+            logging.info(f"Test run; Accuracy: "
+                         f"SelectMotif: {m1_accuracy:.3f}, ")
+                         # f"SelectMolAttachmentAB: {l21_accuracy:.3f}, "
+                         # f"SelectMolAttachmentBA: {l22_accuracy:.3f}, "
+                         # f"ClassifyMolBond: {l3_accuracy:.3f}")
 
-    def _train_epoch(self) -> None:
+    def _load_checkpoint(self):
+        checkpoint = torch.load(self._checkpoint_path)
+        self._epoch = checkpoint['epoch']
+
+        self._encode_mol.load_state_dict(checkpoint['model']['encode_mol'])
+        self._select_motif_mlp.load_state_dict(checkpoint['model']['select_motif_mlp'])
+        self._select_mol_attachment.load_state_dict(checkpoint['model']['select_mol_attachment'])
+        self._classify_mol_bond.load_state_dict(checkpoint['model']['classify_mol_bond'])
+
+        self._optimizer.load_state_dict(checkpoint['optimizer'])
+        self._lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+
+    def _save_checkpoint(self):
+        torch.save({
+            'epoch': self._epoch,
+            'model': {
+                'encode_mol': self._encode_mol.state_dict(),
+                'select_motif_mlp': self._select_motif_mlp.state_dict(),
+                'select_mol_attachment': self._select_mol_attachment.state_dict(),
+                'classify_mol_bond': self._classify_mol_bond.state_dict()
+            },
+            'optimizer': self._optimizer.state_dict(),
+            'lr_scheduler': self._lr_scheduler.state_dict(),
+        }, self._checkpoint_path)
+
+    def _train_epoch(self):
         for i, batch in enumerate(self._training_dataloader):
             self._train_step(i, batch)
-        # TODO save checkpoint at the end of an epoch?
-        self._test()
+            # self._test()
+
+            if (i + 1) % 100 == 0:
+                self._test()
+
+            if (i + 1) % 10 == 0:
+                self._writer.flush()
+            self._writer_step += 1
+
+        logging.info(f"Saving checkpoint to: \"{self._checkpoint_path}\"")
+        self._save_checkpoint()
 
     def train(self):
         logging.info("Training started...")
 
-        epoch = 1
         while True:
-            logging.info(f"---------------------------------------------------------------- Epoch {epoch}")
+            logging.info(f"---------------------------------------------------------------- Epoch {self._epoch}")
 
             self._train_epoch()
-            epoch += 1
+            self._epoch += 1
 
 
 def _main():
