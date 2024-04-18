@@ -1,0 +1,8 @@
+# Dataset
+*.csv
+*.tab
+*.pkl
+
+# Tasks
+/**/checkpoints/*
+/**/runs/*

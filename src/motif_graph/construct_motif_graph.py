@@ -1,5 +1,4 @@
 from common import *
-import os
 import sys
 from rdkit import Chem
 import pickle
@@ -133,116 +132,13 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
     return motif_graph
 
 
-def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph,
-                                  motif_vocab: MotifVocab) -> Tuple[str, Dict[Tuple[int, int], int]]:
-    """ Converts the input motif graph to SMILES.
-
-    :return:
-        A tuple (generated_smiles, cluster_atom_map), where cluster_atom_map is a mapping from (cluster_id, motif_atom_index) to atom_index.
-        It basically tells where an atom, from the original Motif graph, went in the final molecule.
-    """
-
-    new_mol = Chem.RWMol()
-
-    # (Cluster ID, Motif -relative index) -> Atom index
-    # Given cluster and motif -relative index pointing to an atom, tells the generated molecule
-    cluster_atom_map = {}
-
-    # Add clusters to the final molecule
-    for cid in motif_graph.nodes:
-        motif_id = motif_graph.nodes[cid]['motif_id']
-        motif_smiles = motif_vocab.at_id(motif_id)['smiles']
-
-        motif_mol = Chem.MolFromSmiles(motif_smiles)
-        Chem.Kekulize(motif_mol)  # No aromatic bonds when building...
-
-        for atom in motif_mol.GetAtoms():
-            new_idx = new_mol.AddAtom(copy_atom(atom))
-            atom.SetAtomMapNum(new_idx)  # Save the new_idx, so later we can make bonds
-            cluster_atom_map[(cid, atom.GetIdx())] = new_idx
-
-        for bond in motif_mol.GetBonds():
-            new_atom1 = bond.GetBeginAtom()
-            new_atom2 = bond.GetEndAtom()
-            new_mol.AddBond(new_atom1.GetAtomMapNum(), new_atom2.GetAtomMapNum(), bond.GetBondType())
-
-    # Interconnect the clusters using attachment information
-    for cid1, cid2 in motif_graph.edges:
-        attachment = motif_graph.edges[cid1, cid2]['attachment']
-
-        for (motif_a1, motif_a2), bond_type in attachment.items():
-            new_a1 = cluster_atom_map[(cid1, motif_a1)]
-            new_a2 = cluster_atom_map[(cid2, motif_a2)]
-            if new_mol.GetBondBetweenAtoms(new_a1, new_a2) is None:
-                new_mol.AddBond(new_a1, new_a2, bond_type)
-
-    smiles = Chem.MolToSmiles(new_mol)
-    return canon_smiles(smiles)[0], cluster_atom_map
-
-
-def construct_and_save_motif_graphs():
-    """ Constructs motif graphs for all training set samples; saves the final result to a .pkl file. """
-
-    if path.exists(MOTIF_GRAPHS_PKL):
-        in_ = input(f"File already exists \"{MOTIF_GRAPHS_PKL}\", overwrite? (y/N) ")
-        if in_.lower() != "y":
-            return 0
-
-    training_set = pd.read_csv(ZINC_TRAINING_SET_CSV)
-    motif_vocab = MotifVocab.load()
-
-    started_at = time()
-    logged_at = time()
-
-    num_samples = len(training_set)
-
-    print(f"Constructing motif graphs for {num_samples} training set samples...")
-
-    motif_graphs = []
-    for mol_id, mol_smiles in training_set['smiles'].items():
-        # logging.debug(f"{mol_id + 1}/{num_samples} - Constructing motif graph for molecule \"{mol_smiles}\"...")
-
-        motif_graph = construct_motif_graph(mol_smiles, motif_vocab)
-        motif_graphs.append(motif_graph)
-
-        if time() - logged_at > 5.0:
-            num_left = num_samples - (mol_id + 1)
-            time_left = num_left / ((mol_id + 1) / (time() - started_at))
-            logging.info(f"Constructed motif graph for {mol_id + 1}/{num_samples} molecules; "
-                         f"Time left: {time_left:.1f}s, "
-                         f"Directory size: ")
-            logged_at = time()
-
-    print("Constructed motif graphs for all training set molecules!")
-
-    print(f"Saving .pkl file: \"{MOTIF_GRAPHS_PKL}\"")
-
-    with open(MOTIF_GRAPHS_PKL, 'wb') as file:
-        pickle.dump(motif_graphs, file)
-
-    print(f"Done!")
-
-    return 0
-
-
-def load_motif_graphs() -> List[nx.Graph]:
-    try:
-        with open(MOTIF_GRAPHS_PKL, "rb") as file:
-            return pickle.load(file)
-    except Exception as ex:
-        print(
-            f"Motif graph not found at \"{MOTIF_GRAPHS_PKL}\"; you have to generate it using: construct_motif_graph.py",
-            file=sys.stderr)
-        raise ex
-
-
-def visualize_motif_graph():
+def _visualize_motif_graph():
     """ Visualizes a random molecule, its decomposition in motifs/bonds/rings and the motif graph. """
 
     import matplotlib.pyplot as plt
     from rdkit.Chem import Draw
 
-    dataset = pd.read_csv(ZINC_TRAINING_SET_CSV)
+    dataset = pd.read_csv(TRAINING_CSV)
     motif_vocab = MotifVocab.load()
 
     # Sample and display a molecule
@@ -272,8 +168,3 @@ def visualize_motif_graph():
     motif_ids = nx.get_node_attributes(motif_graph, 'motif_id')
     nx.draw(motif_graph, labels=motif_ids)
     plt.show()
-
-
-if __name__ == "__main__":
-    # visualize_motif_graph()
-    construct_and_save_motif_graphs()

@@ -34,7 +34,6 @@ def sample_motif_subgraph(motif_graph: nx.DiGraph, seed: Optional[int] = None) -
 
 
 def _visualize_sampling_histogram():
-    import numpy as np
     from mol_dataset import ZincDataset
     from motif_vocab import MotifVocab
     from construct_motif_graph import construct_motif_graph
@@ -58,8 +57,8 @@ def _visualize_sampling_histogram():
         data.append(sampled_frac)
         # y[int(np.floor((sampled_frac * 0.999) * NUM_PLOT_SAMPLES))] += 1
 
-        if (i+1) % 10000 == 0:
-            logging.info(f"Sampled {i+1} motif subgraphs...")
+        if (i + 1) % 10000 == 0:
+            logging.info(f"Sampled {i + 1} motif subgraphs...")
 
     plt.hist(data, bins=NUM_HIST_BINS)
     plt.show()

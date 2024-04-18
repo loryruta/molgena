@@ -1,48 +1,55 @@
 import os
 from os import path
-from concurrent.futures import ThreadPoolExecutor
 import logging
 import torch
+
+
+def _check_required_env_vars():
+    for env_var in ['DATASET_DIR']:
+        if env_var not in os.environ:
+            raise Exception(f"Missing required env variable: \"{env_var}\"")
+
+
+_check_required_env_vars()
 
 # ------------------------------------------------------------------------------------------------
 # Configuration constants
 # ------------------------------------------------------------------------------------------------
 
-BASE_DIR = path.abspath(path.dirname(__file__))
+DATASET_DIR = os.environ["DATASET_DIR"]
 
-DATA_DIR = path.join(BASE_DIR, "data")
+DATASET_CSV = path.join(DATASET_DIR, "dataset.csv")
+TRAINING_CSV = path.join(DATASET_DIR, "training.csv")
+VALIDATION_CSV = path.join(DATASET_DIR, "validation.csv")
+TEST_CSV = path.join(DATASET_DIR, "test.csv")
 
-ZINC_DATASET_CSV = path.join(DATA_DIR, "zinc.csv")
-ZINC_TRAINING_SET_CSV = path.join(DATA_DIR, "zinc_training_set.csv")
-ZINC_VALIDATION_SET_CSV = path.join(DATA_DIR, "zinc_validation_set.csv")
-ZINC_TEST_SET_CSV = path.join(DATA_DIR, "zinc_test_set.csv")
+MOTIF_VOCAB_CSV = path.join(DATASET_DIR, "motif_vocab.csv")
 
-DATASET_PATH = ZINC_DATASET_CSV  # TODO old name, delete
+TRAINING_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "training_motif_graphs.pkl")
+VALIDATION_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "validation_motif_graphs.pkl")
+TEST_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "test_motif_graphs.pkl")
 
-MOTIF_VOCAB_CSV = path.join(DATA_DIR, "motif_vocab.csv")
-MOTIF_GRAPHS_PKL = path.join(DATA_DIR, "motif_graphs.pkl")
-
-RUNS_DIR = path.join(DATA_DIR, "runs")
+RUNS_DIR = path.join(DATASET_DIR, "runs")
 RUNS_RECON_DIR = path.join(RUNS_DIR, "reconstruct")
 
-CHECKPOINTS_DIR = path.join(DATA_DIR, "checkpoints")
+CHECKPOINTS_DIR = path.join(DATASET_DIR, "checkpoints")
 
 
 # ------------------------------------------------------------------------------------------------
 
 # process_pool = multiprocess.Pool()
-threadpool = ThreadPoolExecutor(max_workers=16)
+# threadpool = ThreadPoolExecutor(max_workers=16)
 # fast_iterator = FastIterator(process_pool, threadpool)
 
 
 def _on_import():
+    # Setup logging
+    logging.basicConfig(format='%(asctime)s [%(levelname)-5s] %(message)s', encoding='utf-8', level=logging.DEBUG)
+
     # TODO Probably doesn't handle multi-GPU scenario
     selected_dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     torch.set_default_device(selected_dev)
-    print(f"Default PyTorch device to: \"{selected_dev}\"")
-
-    # Setup logging
-    logging.basicConfig(format='%(asctime)s [%(levelname)-5s] %(message)s', encoding='utf-8', level=logging.DEBUG)
+    logging.debug(f"Default PyTorch device to: \"{selected_dev}\"")
 
 
 _on_import()

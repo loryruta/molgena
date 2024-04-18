@@ -1,9 +1,6 @@
 from common import *
-from rdkit import Chem
-import pandas as pd
-from typing import *
 from collections import Counter
-import logging
+import pandas as pd
 from time import time
 from utils.chem_utils import *
 from motif_vocab import MotifVocab
@@ -72,6 +69,8 @@ def decompose_motif_candidate(mol_smiles: str) -> Set[str]:
 
 
 def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> List[Tuple[int, str, bool]]:
+    print(f"Generating motif vocabulary on {len(training_set)} (min frequency: {min_frequency})...")
+
     candidate_counter = Counter()
     motifs: Dict[str, int] = {}  # Motif -> Motif index
     vocab_rows: List[Tuple[int, str, bool]] = []  # Motif vocabulary (id, smiles, passed_frequency_test)
@@ -90,9 +89,9 @@ def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> 
             candidate_counter[cand_smiles] += 1
         if time() - logged_at > 1.0:
             time_left = (len(training_set) - (i + 1)) / ((i + 1) / (time() - started_at))
-            logging.info(f"{i}/{len(training_set)} training set SMILES processed; "
-                         f"Candidate motifs: {len(candidate_counter)}, "
-                         f"Time left: {time_left:.1f}s")
+            print(f"{i}/{len(training_set)} training set SMILES processed; "
+                  f"Candidate motifs: {len(candidate_counter)}, "
+                  f"Time left: {time_left:.1f}s")
             logged_at = time()
 
     # If the candidate isn't frequent enough in training set, split it into bonds and rings
@@ -106,14 +105,14 @@ def generate_motif_vocabulary(training_set: pd.DataFrame, min_frequency=100) -> 
         else:
             add_motif(to_vocabulary_format(cand_smiles), True)
         if i % 100 == 0:
-            logging.info(f"{i}/{num_candidates} candidate motifs processed; Output motifs: {len(motifs)}")
+            print(f"{i}/{num_candidates} candidate motifs processed; Output motifs: {len(motifs)}")
 
     df = pd.DataFrame(vocab_rows, columns=['id', 'smiles', 'passed_frequency_test'])  # Only for logging
     num_motifs = len(vocab_rows)
     num_passed_freq_test = len(df[df['passed_frequency_test']])
-    logging.info(f"Motif vocabulary built; "
-                 f"Size: {num_motifs}; "
-                 f"Passed frequency test: {num_passed_freq_test}/{num_motifs}")
+    print(f"Motif vocabulary built; "
+          f"Size: {num_motifs}; "
+          f"Passed frequency test: {num_passed_freq_test}/{num_motifs}")
     return vocab_rows
 
 
@@ -130,7 +129,11 @@ def decompose_mol(mol_smiles: str, motif_vocab: MotifVocab) -> Set[str]:
 
 
 def _main():
-    training_set = pd.read_csv(ZINC_TRAINING_SET_CSV)
+    if path.exists(MOTIF_VOCAB_CSV):
+        print("Motif vocabulary already exists, skipping")
+        return
+
+    training_set = pd.read_csv(TRAINING_CSV)
     vocab_rows = generate_motif_vocabulary(training_set, min_frequency=100)
 
     df = pd.DataFrame(vocab_rows, columns=['id', 'smiles', 'passed_frequency_test'])
