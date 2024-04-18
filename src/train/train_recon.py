@@ -182,7 +182,7 @@ class MolgenaReconstructTask:
     def _collate_fn(self, raw_batch: List[Tuple[int, str]]) -> Tuple[List[str], List[nx.Graph], TensorGraph]:
         mol_smiles_list = [mol_smiles for _, mol_smiles in raw_batch]
         motif_graphs = [self._motif_graphs[i] for i, _ in raw_batch]
-        mol_graph = create_tensor_graph_from_smiles_list(mol_smiles_list)
+        mol_graph = tensorize_smiles_list(mol_smiles_list)
         return mol_smiles_list, motif_graphs, mol_graph
 
     def _sample_labels(self, motif_graphs: List[nx.DiGraph]) -> Labels:
@@ -363,7 +363,7 @@ class MolgenaReconstructTask:
 
         batch_size = len(mol_smiles_list)
 
-        self._mol_graphs = create_tensor_graph_from_smiles_list(mol_smiles_list)
+        self._mol_graphs = tensorize_smiles_list(mol_smiles_list)
         assert self._partial_mol_graphs
         assert self._motif_mol_graphs
         assert self._bond_classification_input is not None
@@ -474,7 +474,7 @@ class MolgenaReconstructTask:
 
         test_smiles_list = self._test_set.df.sample(n=batch_size)['smiles'].tolist()
         motif_graphs = [construct_motif_graph(smiles, self._motif_vocab) for smiles in test_smiles_list]
-        mol_graphs = create_tensor_graph_from_smiles_list(test_smiles_list)
+        mol_graphs = tensorize_smiles_list(test_smiles_list)
 
         batch = (test_smiles_list, motif_graphs, mol_graphs)
 

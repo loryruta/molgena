@@ -44,7 +44,7 @@ def _create_bond_features(bond) -> List[float]:
 
 
 # TODO rename to create_tensor_graph_from_smiles
-def create_mol_graph_from_smiles(smiles: Optional[str]) -> TensorGraph:
+def tensorize_smiles(smiles: Optional[str]) -> TensorGraph:
     """ Parses the input SMILES string to a TensorGraph.
     Not: SMILES is allowed to be None; if such, or empty string, an empty TensorGraph is returned.
     """
@@ -80,17 +80,8 @@ def create_mol_graph_from_smiles(smiles: Optional[str]) -> TensorGraph:
     return tensor_graph
 
 
-# TODO remove for tensorize_smiles_list
-def create_tensor_graph_from_smiles_list(smiles_list: List[str]) -> TensorGraph:
-    return batch_tensor_graphs([
-        create_mol_graph_from_smiles(smiles) for smiles in smiles_list
-    ])
-
-
 def tensorize_smiles_list(smiles_list: List[str]) -> TensorGraph:
-    return batch_tensor_graphs([
-        create_mol_graph_from_smiles(smiles) for smiles in smiles_list
-    ])
+    return batch_tensor_graphs([tensorize_smiles(smiles) for smiles in smiles_list])
 
 
 def _main():
@@ -100,7 +91,7 @@ def _main():
 
     smiles = "CCOC(=O)[C@@H]1CCCN(C(=O)c2nc(-c3ccc(C)cc3)n3c2CCCCC3)C1"
 
-    tensor_graph: TensorGraph = create_mol_graph_from_smiles(smiles)
+    tensor_graph: TensorGraph = tensorize_smiles(smiles)
 
     fig, axs = plt.subplots(2, 1, figsize=(8, 10))
 
