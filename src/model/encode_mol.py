@@ -30,5 +30,5 @@ class EncodeMol(nn.Module):
         assert batch_indices.max().item() < batch_size
 
         mol_repr = torch.zeros((batch_size, self._node_hidden_dim,))
-        mol_repr.scatter_reduce(0, batch_indices.unsqueeze(1), mol_graph.node_hiddens, reduce='mean')  # (B, NH,)
+        mol_repr = mol_repr.index_reduce(0, batch_indices, mol_graph.node_hiddens, reduce='mean')  # (B, NH,)
         return mol_repr
