@@ -3,9 +3,7 @@ import torch
 from torch import nn
 from typing import *
 from model.encode_mol import EncodeMolMPN
-from tensor_graph import TensorGraph, batch_tensor_graphs
-from mol_graph import create_mol_graph_from_smiles
-from motif_vocab import MotifVocab
+from tensor_graph import TensorGraph
 
 
 class ClassifyMolBond(nn.Module):
@@ -38,7 +36,7 @@ class ClassifyMolBond(nn.Module):
             nn.Linear(128, 64),
             nn.ReLU(),
             nn.Linear(64, 4),
-            nn.Softmax()
+            nn.Softmax(dim=1)
         )
 
     @staticmethod
@@ -122,56 +120,3 @@ class ClassifyMolBond(nn.Module):
         mlp_output = self._classify_bond_type_mlp(mlp_input)  # (NC, 4)
 
         return mlp_output
-
-
-def _main():  # TODO remove
-    import pandas as pd
-    import random
-
-    BATCH_SIZE = 5
-
-    motif_vocab = MotifVocab.load()
-
-    mol_graphs = batch_tensor_graphs(*[
-        create_mol_graph_from_smiles(smiles)
-        for smiles in list(pd.read_csv(DATASET_PATH).sample(n=BATCH_SIZE))
-    ])
-    motif_graphs = batch_tensor_graphs(*[
-        create_mol_graph_from_smiles(smiles)
-        for smiles in list(motif_vocab.sample(n=BATCH_SIZE))
-    ])
-
-    def sample(n: int, max_k: int = 1000):
-        """ Samples _at most_ K different elements from a list ranging from 0 to N - 1. """
-        num_samples = random.randint(1, min(max_k, n))
-        seq = list(range(n))
-        return random.sample(seq, min(num_samples, n))
-
-    _, mol_batch_lengths = torch.unique_consecutive(mol_graphs.batch_indices, return_count=True)
-    _, motif_batch_lengths = torch.unique_consecutive(motif_graphs.batch_indices, return_count=True)
-
-    proposed_bonds = []
-    for batch_idx in range(BATCH_SIZE):
-        mol_atom_indices = \
-            torch.tensor(sample(mol_batch_lengths[batch_idx]), dtype=torch.long)  # Batch-relative indices
-        mol_atom_indices += mol_batch_lengths[:batch_idx]  # TensorGraph-relative indices
-
-        motif_atom_indices = \
-            torch.tensor(sample(motif_batch_lengths[batch_idx]), dtype=torch.long)  # Batch-relative indices
-        motif_atom_indices += motif_batch_lengths[:batch_idx]  # TensorGraph-relative indices
-
-        proposed_bonds.append(
-            torch.cartesian_prod(mol_atom_indices, motif_atom_indices)
-        )  # (..., 2)
-    proposed_bonds = torch.cat(proposed_bonds)
-
-    model = ClassifyMolBond()
-
-    num_params = sum(param.numel() for param in model.parameters())
-    print(f"Model params: {num_params}")
-
-    classified_bonds = model(mol_graphs, motif_graphs, proposed_bonds)
-
-
-if __name__ == '__main__':
-    _main()
