@@ -4,7 +4,16 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 from tensor_graph import TensorGraph, batch_tensor_graphs
 from typing import *
+from utils.tensor_utils import *
 
+
+# inspect_dataset latest output:
+# 2024-04-17 21:22:23,036 [INFO ] Atomic number;    Min: 6.00000, Max: 53.00000, Mean: 6.69403, Std: 2.24432
+# 2024-04-17 21:22:23,364 [INFO ] Explicit valence; Min: 1.00000, Max: 6.00000, Mean: 2.76499, Std: 1.00490
+# 2024-04-17 21:22:23,697 [INFO ] Formal charge;    Min: -1.00000, Max: 1.00000, Mean: 0.00875, Std: 0.13331
+# 2024-04-17 21:22:24,024 [INFO ] Isotope;          Min: 0.00000, Max: 0.00000, Mean: 0.00000, Std: 0.00000
+# 2024-04-17 21:22:24,299 [INFO ] Mass;             Min: 12.01100, Max: 126.90400, Mean: 13.44766, Std: 4.91093
+# 2024-04-17 21:22:24,606 [INFO ] Bond type;        Min: 1.00000, Max: 3.00000, Mean: 1.27735, Std: 0.31801
 
 # TODO rename to tensor_mol_graph (mol_graph is too generic)
 
@@ -15,7 +24,7 @@ def _create_atom_features(atom) -> List[float]:
     formal_charge = atom.GetFormalCharge()
     # Atom.GetHybridization()
     # Atom.GetImplicitValence()
-    isotope = atom.GetIsotope()
+    # isotope = atom.GetIsotope()  # Always zero in our dataset
     mass = atom.GetMass()
     # Atom.GetMonomerInfo()
     # Atom.GetNoImplicit()
@@ -24,7 +33,16 @@ def _create_atom_features(atom) -> List[float]:
     # Atom.GetNumRadicalElectrons()
     # Atom.GetPDBResidueInfo()
     # Atom.GetTotalValence()
-    return [atomic_num, explicit_valence, formal_charge, isotope, mass]
+
+    # Normalization to 0 mean and unit std
+    # Mean/std computed with inspect_dataset.py
+    atomic_num = (atomic_num - 6.69403) / 2.24432
+    explicit_valence = (explicit_valence - 2.76499) / 1.00490
+    formal_charge = (formal_charge - 0.00875) / 0.13331
+    # isotope = isotope  # It's always zero! Useless information
+    mass = (mass - 13.44766) / 4.91093
+
+    return [atomic_num, explicit_valence, formal_charge, 0, mass]
 
 
 def _create_bond_features(bond) -> List[float]:
@@ -32,7 +50,7 @@ def _create_bond_features(bond) -> List[float]:
 
     # Bond types:
     # https://www.rdkit.org/docs/source/rdkit.Chem.rdchem.html#rdkit.Chem.rdchem.BondType
-    bond_type = bond.GetBondType()
+    bond_type = bond.GetBondTypeAsDouble()
     # bond_type = bond.GetBondTypeAsDouble()
     # TODO Filter bond_type for only managed bonds (i.e. ZERO, SINGLE, DOUBLE, TRIPLE)?
 
@@ -40,6 +58,11 @@ def _create_bond_features(bond) -> List[float]:
     # Bond.GetStereo()
     # Bond.GetStereoAtoms()
     # Bond.GetValenceContrib()
+
+    # Normalization to 0 mean and unit std
+    # Mean/std computed with inspect_dataset.py
+    bond_type = (bond_type - 1.27735) / 0.31801
+
     return [bond_type]
 
 
