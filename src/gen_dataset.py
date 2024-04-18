@@ -81,10 +81,10 @@ def _main():
                  f"Validation set {len(validation_set)} ({VALIDATION_FRAC * 100:.1f}%), "
                  f"Test set {len(test_set)} ({TEST_FRAC * 100:.1f}%)")
 
-    logging.info(f"Saving unfiltered splits...")
-    training_set.to_csv(ZINC_TRAINING_SET_CSV)
-    validation_set.to_csv(ZINC_VALIDATION_SET_CSV)
-    test_set.to_csv(ZINC_TEST_SET_CSV)
+    # logging.info(f"Saving unfiltered splits...")
+    # training_set.to_csv(ZINC_TRAINING_SET_CSV)
+    # validation_set.to_csv(ZINC_VALIDATION_SET_CSV)
+    # test_set.to_csv(ZINC_TEST_SET_CSV)
 
     # Filter training set
     logging.info(f"Filtering training set...")
