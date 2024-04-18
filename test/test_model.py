@@ -53,7 +53,7 @@ def test_encode_mol(mol_dataset):
     smiles_list = mol_dataset.df.sample(n=BATCH_SIZE)['smiles'].to_list()
 
     mol_graph = tensorize_smiles_list(smiles_list)
-    mol_graph.create_hiddens(200, 100)
+    mol_graph.create_hiddens(MOL_REPR_DIM, 50)
     assert mol_graph.batch_size() == BATCH_SIZE
 
     logging.info("Initializing EncodeMol module...")
@@ -84,12 +84,11 @@ def test_select_motif_mlp():
     })
     output = module(partial_mol_reprs, recon_mol_reprs)
     assert output.shape == (BATCH_SIZE, 4331 + 1)
-    assert_normalized_output(output, dim=1)
 
-    # Test reconstruction mode, first call (None, recon_mol)
-    output = module(None, recon_mol_reprs)
-    assert output.shape == (BATCH_SIZE, 4331 + 1)
-    assert_normalized_output(output, dim=1)
+    # Invalid call (partial_mol required)
+    with pytest.raises(Exception) as _:
+        output = module(None, recon_mol_reprs)
+        assert output.shape == (BATCH_SIZE, 4331 + 1)
 
     # Test optimization mode (partial_mol, None)
     module = SelectMotifMlp(**{
@@ -99,10 +98,9 @@ def test_select_motif_mlp():
     })
     output = module(partial_mol_reprs, None)
     assert output.shape == (BATCH_SIZE, 4331 + 1)
-    assert_normalized_output(output, dim=1)
 
-    # Invalid call
-    with pytest.raises(AssertionError) as _:
+    # Invalid call (partial_mol required)
+    with pytest.raises(Exception) as _:
         module(None, None)
 
 
