@@ -1,16 +1,19 @@
 from common import *
-import random
+from random import Random
 import networkx as nx
 from typing import *
 
 
-def _sample_subgraph_uniformly(graph: nx.DiGraph) -> Set[int]:
-    num_subgraph_nodes = random.randint(0, len(graph.nodes) - 1)
+def _sample_subgraph_uniformly(graph: nx.DiGraph, seed: Optional[int]) -> Set[int]:
+    rand = Random(seed)
+
+    num_subgraph_nodes = rand.randint(0, len(graph.nodes) - 1)
 
     if num_subgraph_nodes == 0:
+        rand.seed()
         return set({})
 
-    initial_node = random.randint(0, len(graph.nodes) - 1)
+    initial_node = rand.randint(0, len(graph.nodes) - 1)
     if num_subgraph_nodes == 1:
         return {initial_node}
 
@@ -22,12 +25,12 @@ def _sample_subgraph_uniformly(graph: nx.DiGraph) -> Set[int]:
                 neighbors.update([v for _, v in graph.out_edges(u) if v not in taken_nodes])
             except:
                 pass
-        taken_nodes.add(random.choice(list(neighbors)))
+        taken_nodes.add(rand.choice(list(neighbors)))
     return taken_nodes
 
 
-def sample_motif_subgraph(motif_graph: nx.DiGraph) -> Set[int]:
-    return _sample_subgraph_uniformly(motif_graph)
+def sample_motif_subgraph(motif_graph: nx.DiGraph, seed: Optional[int] = None) -> Set[int]:
+    return _sample_subgraph_uniformly(motif_graph, seed)
 
 
 def _visualize_sampling_histogram():
@@ -41,8 +44,6 @@ def _visualize_sampling_histogram():
     SEED = 2
     NUM_HIST_BINS = 10
 
-    random.seed(SEED)
-
     training_set = ZincDataset.training_set()
     motif_vocab = MotifVocab.load()
 
@@ -51,7 +52,7 @@ def _visualize_sampling_histogram():
     data = []
     for i, mol_smiles in enumerate(mol_smiles_list):
         motif_graph = construct_motif_graph(mol_smiles, motif_vocab)
-        motif_subgraph_indices = sample_motif_subgraph(motif_graph)
+        motif_subgraph_indices = sample_motif_subgraph(motif_graph, SEED)
 
         sampled_frac = len(motif_subgraph_indices) / len(motif_graph.nodes)
         data.append(sampled_frac)
