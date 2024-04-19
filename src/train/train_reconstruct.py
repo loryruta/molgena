@@ -3,6 +3,7 @@ import logging
 from typing import *
 import pandas as pd
 import networkx as nx
+from pathlib import Path
 from random import Random
 import torch
 import torch.nn.functional as F
@@ -99,10 +100,21 @@ class MolgenaReconstructTask:
     # It's generated during the labeling process and cached for later use
     _bond_classification_input: torch.LongTensor
 
-    def __init__(self, params: Dict[str, Any]):  # TODO typing for params
-        self._params = params
+    def __init__(self, train_dir: str, config_filepath: str):
+        self._config_name = Path(config_filepath).stem
+        self._config = load_json_with_vars(config_filepath)
 
-        # Loading datasets
+        # Create ./runs/ directory
+        self._runs_dir = path.join(train_dir, f"runs-{self._config_name}")
+        if not path.exists(self._runs_dir):
+            os.mkdir(self._runs_dir)
+
+        # Create ./checkpoints/ directory
+        self._checkpoints_dir = path.join(train_dir, f"checkpoints-{self._config_name}")
+        if not path.exists(self._checkpoints_dir):
+            os.mkdir(self._checkpoints_dir)
+
+        # Load datasets
         self._training_set = ZincDataset.training_set()
         logging.info(f"Training set loaded; Num molecules: {len(self._training_set)}")
 
@@ -126,38 +138,42 @@ class MolgenaReconstructTask:
         self._num_motifs = len(self._motif_vocab)
         self._end_motif_idx = self._num_motifs
 
-        # Loading model layers
-        self._encode_mol = EncodeMol(params['encode_mol'])
+        # Load modules
+        self._encode_mol = EncodeMol(self._config['encode_mol'])
         logging.info(f"EncodeMol loaded; Num parameters: {num_model_params(self._encode_mol)}")
 
-        self._select_motif_mlp = SelectMotifMlp(params['select_motif_mlp'])
+        self._select_motif_mlp = SelectMotifMlp(self._config['select_motif_mlp'])
         logging.info(f"SelectMotifMlp loaded; Num parameters: {num_model_params(self._select_motif_mlp)}")
 
-        self._select_mol_attachment = SelectMolAttachment(params['select_mol_attachment'])
+        self._select_mol_attachment = SelectMolAttachment(self._config['select_mol_attachment'])
         logging.info(f"SelectMolAttachment loaded; Num parameters: {num_model_params(self._select_mol_attachment)}")
 
-        self._classify_mol_bond = ClassifyMolBond(params['classify_mol_bond'])
+        self._classify_mol_bond = ClassifyMolBond(self._config['classify_mol_bond'])
         logging.info(f"ClassifyMolBond loaded; Num parameters: {num_model_params(self._classify_mol_bond)}")
 
-        self._parameters = list(self._encode_mol.parameters()) + \
-                           list(self._select_motif_mlp.parameters())  # + \
-        # list(self._select_mol_attachment.parameters()) + \
-        # list(self._classify_mol_bond.parameters())
-        logging.info(f"Total num parameters: {sum([param.numel() for param in self._parameters])}")
+        # Create optimizer and LR scheduler
+        parameters = [
+            *self._encode_mol.parameters(),
+            *self._select_motif_mlp.parameters(),
+            *self._select_mol_attachment.parameters(),
+            # *self._classify_mol_bond.parameters()
+        ]
+        logging.info(f"Total num parameters: {sum([param.numel() for param in parameters])}")
 
-        self._optimizer = torch.optim.Adam(self._parameters, lr=0.001)
+        self._optimizer = torch.optim.Adam(parameters, lr=0.001)
         self._lr_scheduler = CosineAnnealingLR(self._optimizer, T_max=50)
         logging.info(f"Optimizer ready")
 
-        self._writer = SummaryWriter(log_dir=RUNS_RECON_DIR)
-        self._writer_step = 0
-
         self._epoch = 0
 
-        self._checkpoint_path = path.join(CHECKPOINTS_DIR, "recon_checkpoint.pt")
-        if path.exists(self._checkpoint_path):
-            logging.info(f"Found checkpoint: \"{self._checkpoint_path}\"")
-            self._load_checkpoint()
+        # Create tensorboard writer
+        self._writer = SummaryWriter(log_dir=self._runs_dir)
+        self._writer_step = 0
+
+        # Load latest checkpoint if any
+        latest_checkpoint_path = path.join(self._checkpoints_dir, "checkpoint-latest.pt")
+        if path.exists(latest_checkpoint_path):
+            self._load_checkpoint(latest_checkpoint_path)
 
     def _collate_fn(self, raw_batch: List[Tuple[int, str]]) -> Tuple[List[str], List[nx.Graph], TensorGraph]:
         mol_smiles_list = [mol_smiles for _, mol_smiles in raw_batch]
@@ -349,13 +365,6 @@ class MolgenaReconstructTask:
         pred = Predictions()
 
         # Inference EncodeMol
-        node_hidden_dim, edge_hidden_dim = self._params['encode_mol']['node_hidden_dim'], \
-            self._params['encode_mol']['edge_hidden_dim']
-
-        self._mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-        self._partial_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-        self._motif_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-
         self._mol_reprs = self._encode_mol(self._mol_graphs, batch_size)
         self._partial_mol_reprs = self._encode_mol(self._partial_mol_graphs, batch_size)
         self._motif_mol_reprs = self._encode_mol(self._motif_mol_graphs, batch_size)
@@ -369,21 +378,16 @@ class MolgenaReconstructTask:
         # - empty motif (END token drawn)
 
         # Inference SelectMolAttachment
-        # TODO one thing at a time :)
-        # node_hidden_dim, edge_hidden_dim = self._params['select_mol_attachment']['mol_b_node_hidden_dim'], \
-        #     self._params['select_mol_attachment']['mol_b_edge_hidden_dim']
-        #
-        # self._motif_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-        # pred.batched_motif_candidates = self._select_mol_attachment(self._partial_mol_reprs, self._motif_mol_graphs)
-        #
-        # self._partial_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
-        # pred.batched_partial_mol_candidates = \
-        #     self._select_mol_attachment(self._motif_mol_reprs, self._partial_mol_graphs)
+        pred.batched_motif_candidates = \
+            self._select_mol_attachment(self._partial_mol_reprs, self._motif_mol_graphs)
+
+        pred.batched_partial_mol_candidates = \
+            self._select_mol_attachment(self._motif_mol_reprs, self._partial_mol_graphs)
 
         # Inference ClassifyMolBond
         # TODO one thing at a time :)
-        # node_hidden_dim, edge_hidden_dim = self._params['classify_mol_bond']['atom_hidden_dim'], \
-        #     self._params['classify_mol_bond']['bond_hidden_dim']
+        # node_hidden_dim, edge_hidden_dim = self._config['classify_mol_bond']['atom_hidden_dim'], \
+        #     self._config['classify_mol_bond']['bond_hidden_dim']
         #
         # self._partial_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
         # self._motif_mol_graphs.create_hiddens(node_hidden_dim, edge_hidden_dim)
@@ -403,21 +407,21 @@ class MolgenaReconstructTask:
           - L3_ = loss for ClassifyMolBond
         """
 
-        loss = Loss()
-        loss.l1_ = F.cross_entropy(pred.batched_motif_distr, labels.next_motif_labels)
-        loss.l21 = torch.tensor(0)
-        loss.l22 = torch.tensor(0)
-        loss.l3_ = torch.tensor(0)
+        a1_ = 1.
+        a21 = 10.
+        a22 = 10.
+        a3_ = 1.
 
-        # TODO one thing at a time :)
-        # loss.l21 = \
-        #     cross_entropy(pred.batched_partial_mol_candidates, labels.batched_partial_mol_candidates, dim=0).mean()
-        # loss.l22 = \
-        #     cross_entropy(pred.batched_motif_candidates, labels.batched_motif_candidates, dim=0).mean()
+        loss = Loss()
+        loss.l1_ = a1_ * F.cross_entropy(pred.batched_motif_distr, labels.next_motif_labels)
+        loss.l21 = a21 * F.binary_cross_entropy(pred.batched_partial_mol_candidates,
+                                                labels.batched_partial_mol_candidates).mean()
+        loss.l22 = a22 * F.binary_cross_entropy(pred.batched_motif_candidates, labels.batched_motif_candidates).mean()
         # loss.l3_ = \
         #     cross_entropy(pred.batched_bond_types, labels.batched_bond_labels, dim=1).mean()
+        loss.l3_ = torch.tensor(0)
 
-        loss.total_loss = loss.l1_
+        loss.total_loss = loss.l1_ + loss.l21 + loss.l22 + loss.l3_
 
         return loss
 
@@ -460,7 +464,13 @@ class MolgenaReconstructTask:
         self._lr_scheduler.step()
 
         # Update tensorboard
-        self._writer.add_scalar("select_motif_mlp/loss", loss.l1_, self._writer_step)
+        self._writer.add_scalars("loss", {
+            "l1": loss.l1_,
+            "l21": loss.l21,
+            "l22": loss.l22,
+            "l3": loss.l3_,
+            # "total": loss.total_loss,
+        }, self._writer_step)
 
         # Log
         num_batches = len(self._training_set) // self._batch_size
@@ -502,29 +512,36 @@ class MolgenaReconstructTask:
         with torch.no_grad():
             pred = self._run_inference(batch)
 
-            tmp = torch.argmax(pred.batched_motif_distr, dim=1) == torch.argmax(labels.next_motif_ids, dim=1)
-            m1_accuracy = tmp.sum() / batch_size
+            m1_accuracy = \
+                (torch.argmax(pred.batched_motif_distr, dim=1) == labels.next_motif_labels).sum() / batch_size
+            m21_accuracy = iou(pred.batched_partial_mol_candidates > 0.5, labels.batched_partial_mol_candidates > 0.5)
+            m22_accuracy = iou(pred.batched_motif_candidates > 0.5, labels.batched_motif_candidates > 0.5)
+            m3_accuracy = 0.0
 
-            # Update tensorboard
-            self._writer.add_scalar("select_motif_mlp/accuracy", m1_accuracy, self._writer_step)
-
-            # l21_accuracy = iou(pred.batched_partial_mol_candidates > 0.5, labels.batched_partial_mol_candidates > 0.5)
-            # l22_accuracy = iou(pred.batched_motif_candidates > 0.5, labels.batched_motif_candidates > 0.5)
             #
-            # l3_accuracy = (
+            # m3_accuracy = (
             #                       torch.argmax(pred.batched_bond_types, dim=1) == torch.argmax(
             #                   labels.batched_bond_labels,
             #                   dim=1)
             #               ).sum() / batch_size
 
-            logging.info(f"Test run; Accuracy: "
-                         f"SelectMotif: {m1_accuracy:.3f}, ")
-            # f"SelectMolAttachmentAB: {l21_accuracy:.3f}, "
-            # f"SelectMolAttachmentBA: {l22_accuracy:.3f}, "
-            # f"ClassifyMolBond: {l3_accuracy:.3f}")
+            # Update tensorboard
+            self._writer.add_scalars("accuracy", {
+                "m1": m1_accuracy,
+                "m21": m21_accuracy,
+                "m22": m22_accuracy,
+                "m3": m3_accuracy
+            }, self._writer_step)
 
-    def _load_checkpoint(self):
-        checkpoint = torch.load(self._checkpoint_path)
+            # Log
+            logging.info(f"Test run; Accuracy: "
+                         f"SelectMotif: {m1_accuracy:.3f}, "
+                         f"SelectMolAttachmentAB: {m21_accuracy:.3f}, "
+                         f"SelectMolAttachmentBA: {m22_accuracy:.3f}, "
+                         f"ClassifyMolBond: {m3_accuracy:.3f}")
+
+    def _load_checkpoint(self, checkpoint_filepath: str):
+        checkpoint = torch.load(checkpoint_filepath)
         self._epoch = checkpoint['epoch']
 
         self._encode_mol.load_state_dict(checkpoint['model']['encode_mol'])
@@ -535,7 +552,10 @@ class MolgenaReconstructTask:
         self._optimizer.load_state_dict(checkpoint['optimizer'])
         self._lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
 
+        logging.info(f"Checkpoint loaded: {checkpoint_filepath}")
+
     def _save_checkpoint(self):
+        checkpoint_path = path.join(self._checkpoints_dir, f"checkpoint-{self._epoch}.pt")
         torch.save({
             'epoch': self._epoch,
             'model': {
@@ -546,12 +566,30 @@ class MolgenaReconstructTask:
             },
             'optimizer': self._optimizer.state_dict(),
             'lr_scheduler': self._lr_scheduler.state_dict(),
-        }, self._checkpoint_path)
+        }, checkpoint_path)
+        logging.info(f"Saved checkpoint to: {checkpoint_path}")
+
+        checkpoints = []
+        for f in os.listdir(self._checkpoints_dir):
+            f = path.join(self._checkpoints_dir, f)
+            if f.endswith(".pt") and path.isfile(f) and not path.islink(f):
+                checkpoints.append(f)
+        checkpoints.sort(key=lambda f: path.getctime(f), reverse=True)  # Sort by creation time (descending)
+
+        # Create a link to newly created checkpoint
+        latest_filepath = path.join(self._checkpoints_dir, "checkpoint-latest.pt")
+        if path.exists(latest_filepath):
+            os.unlink(latest_filepath)
+        os.symlink(checkpoints[0], latest_filepath)
+
+        # Remove last checkpoint if max is exceeded
+        if len(checkpoints) > 10:
+            os.remove(checkpoints[-1])
+            logging.debug(f"Removed old checkpoint: {checkpoints[-1]}")
 
     def _train_epoch(self):
         for i, batch in enumerate(self._training_dataloader):
             self._train_step(i, batch)
-            # self._test()
 
             if (i + 1) % 100 == 0:
                 self._test()
@@ -560,7 +598,6 @@ class MolgenaReconstructTask:
                 self._writer.flush()
             self._writer_step += 1
 
-        logging.info(f"Saving checkpoint to: \"{self._checkpoint_path}\"")
         self._save_checkpoint()
 
     def train(self):
@@ -578,14 +615,26 @@ def _main():
     from pathlib import Path
 
     parser = ArgumentParser()
-    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--train-dir", type=Path, required=True)
+    parser.add_argument("--config-file", type=Path, required=True)
 
-    params = parser.parse_args()
+    args = parser.parse_args()
 
-    logging.info(f"Loading config file: {params.config}")
-    config_params = load_json_with_vars(params.config)
+    if not path.isdir(args.train_dir):
+        print(f"Invalid train directory: {args.train_dir}")
+        exit(1)
 
-    trainer = MolgenaReconstructTask(config_params)
+    if not path.isfile(args.config_file):
+        print(f"Invalid config file: {args.config_file}")
+        exit(1)
+
+    logging.info(f"Training directory: {args.train_dir}")
+    logging.info(f"Loading config file: {args.config_file}")
+
+    trainer = MolgenaReconstructTask(
+        train_dir=args.train_dir,
+        config_filepath=args.config_file
+    )
     trainer.train()
 
 

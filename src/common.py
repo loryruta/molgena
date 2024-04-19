@@ -29,17 +29,8 @@ TRAINING_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "training_motif_graphs.pkl")
 VALIDATION_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "validation_motif_graphs.pkl")
 TEST_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "test_motif_graphs.pkl")
 
-RUNS_DIR = path.join(DATASET_DIR, "runs")
-RUNS_RECON_DIR = path.join(RUNS_DIR, "reconstruct")
-
-CHECKPOINTS_DIR = path.join(DATASET_DIR, "checkpoints")
-
 
 # ------------------------------------------------------------------------------------------------
-
-# process_pool = multiprocess.Pool()
-# threadpool = ThreadPoolExecutor(max_workers=16)
-# fast_iterator = FastIterator(process_pool, threadpool)
 
 
 def _on_import():

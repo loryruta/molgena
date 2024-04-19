@@ -7,7 +7,9 @@ SRC_DIR="$SCRIPT_DIR/../../src"
 
 cd "$SRC_DIR"
 
-export DATASET_DIR=$DATASET_DIR
 export PYTHONPATH=$SRC_DIR
+export DATASET_DIR=$DATASET_DIR
 
-python ./train/train_reconstruct.py --config "$SCRIPT_DIR/configs/molgena-1.json"
+python ./train/train_reconstruct.py \
+  --train-dir "$SCRIPT_DIR/" \
+  --config "$SCRIPT_DIR/configs/molgena-1.json"

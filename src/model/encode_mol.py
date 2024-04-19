@@ -13,6 +13,7 @@ class EncodeMol(nn.Module):
         super().__init__()
 
         self._node_hidden_dim = params['node_hidden_dim']
+        self._edge_hidden_dim = params['edge_hidden_dim']
 
         self._encode_mol_mpn = EncodeMolMPN(params)
 
@@ -24,6 +25,7 @@ class EncodeMol(nn.Module):
             representation equal to zero.
         """
 
+        mol_graph.create_hiddens(self._node_hidden_dim, self._edge_hidden_dim)
         self._encode_mol_mpn(mol_graph)
 
         batch_indices = mol_graph.batch_indices

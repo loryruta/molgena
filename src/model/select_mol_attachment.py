@@ -3,7 +3,6 @@ from typing import *
 from torch import nn
 from tensor_graph import TensorGraph
 from model.encode_mol_mpn import EncodeMolMPN
-from model.encode_mol import EncodeMol
 
 
 class SelectMolAttachment(nn.Module):
@@ -15,11 +14,14 @@ class SelectMolAttachment(nn.Module):
         super().__init__()
 
         self._mol_a_repr_dim = params['mol_a_repr_dim']
+        self._mol_b_node_hidden_dim = params['mol_b_mpn']['node_hidden_dim']
+        self._mol_b_edge_hidden_dim = params['mol_b_mpn']['edge_hidden_dim']
+
         self._mol_b_mpn = EncodeMolMPN(params['mol_b_mpn'])
 
-        # MLP telling whether to pick or not B atom for attachment
+        # MLP classifying whether to pick or not B atoms for attachment
         self._pick_atom_mlp = nn.Sequential(
-            nn.Linear(self._mol_a_repr_dim + self._mol_b_mpn.node_hidden_dim, 256),
+            nn.Linear(self._mol_a_repr_dim + self._mol_b_node_hidden_dim, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
@@ -41,27 +43,12 @@ class SelectMolAttachment(nn.Module):
             Values higher than a threshold (hyperparameter) are considered to be selected as candidates.
         """
 
-        # B = Batch size
-        # AM = `A` molecule representation dim
-        # BA = `B` molecule total atom count
-        # BAH = `B` molecule atom hidden size
-
-        b_atom_hiddens = mol_b_graphs.node_hiddens
-        b_batch_indices = mol_b_graphs.batch_indices
-
-        # Run message passing on B molecular graphs to build up hidden vectors (same of EncodeMol)
+        # Run message passing on B
+        mol_b_graphs.create_hiddens(self._mol_b_node_hidden_dim, self._mol_b_edge_hidden_dim)
         self._mol_b_mpn(mol_b_graphs)
 
-        # Pair B atoms with the A molecular representation, B atom and molecular representation is concatenated to
-        # obtain MLP input, and then run inference
-        b_atom_mol_a_repr = torch.index_select(mol_a_reprs, 0, b_batch_indices)  # (BA, AM)
-        mlp_input = torch.cat([b_atom_hiddens, b_atom_mol_a_repr], dim=1)  # (BA, BAH+AM)
-        mlp_output = self._pick_atom_mlp(mlp_input).squeeze()  # (BA,)
-        # selected_atoms = (mlp_output >= self._select_motif_atom_threshold)  # (BA, 1)
-
-        # The return value is a 1-dim float tensor, representing a distribution, over all batched_mol_b atoms.
-        # Tells the probability for the i-th atom to be selected as a candidate.
-        # Trained with cross-entropy, on inference select the i-th atom as a candidate only if its value is higher than
-        # a threshold! TODO review comment
+        # Concat A molecular representations with B's node hiddens and run classification
+        b_atom_mol_a_repr = torch.index_select(mol_a_reprs, 0, mol_b_graphs.batch_indices)
+        mlp_input = torch.cat([mol_b_graphs.node_hiddens, b_atom_mol_a_repr], dim=1)
+        mlp_output = self._pick_atom_mlp(mlp_input).squeeze()
         return mlp_output
-
