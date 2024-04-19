@@ -124,9 +124,9 @@ def _filter_dataset_file(dataset_filepath: str,
 
 
 def filter_dataset():
-    _filter_dataset_file(TRAINING_CSV, test_motif_graph_identity=False)
-    _filter_dataset_file(VALIDATION_CSV, test_motif_vocab=True, test_motif_graph_identity=False)
-    _filter_dataset_file(TEST_CSV, test_motif_vocab=True, test_motif_graph_identity=False)
+    _filter_dataset_file(TRAINING_CSV, test_motif_vocab=False, test_motif_graph_identity=True)
+    _filter_dataset_file(VALIDATION_CSV, test_motif_vocab=True, test_motif_graph_identity=True)
+    _filter_dataset_file(TEST_CSV, test_motif_vocab=True, test_motif_graph_identity=True)
 
 
 def _main():
