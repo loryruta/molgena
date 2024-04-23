@@ -386,11 +386,10 @@ class MolgenaReconstructTask:
         # - empty motif (END token drawn)
 
         # Inference SelectMolAttachment
-        pred.batched_motif_candidates = \
-            self._select_mol_attachment(self._partial_mol_reprs, self._motif_mol_graphs)
-
         pred.batched_partial_mol_candidates = \
             self._select_mol_attachment(self._motif_mol_reprs, self._partial_mol_graphs)
+        pred.batched_motif_candidates = \
+            self._select_mol_attachment(self._partial_mol_reprs, self._motif_mol_graphs)
 
         # Inference ClassifyMolBond
         # TODO one thing at a time :)
@@ -416,7 +415,7 @@ class MolgenaReconstructTask:
         """
 
         a1_ = 1.
-        a21 = 17.5
+        a21 = 15.
         a22 = 11.4
         a3_ = 1.
 
@@ -462,7 +461,7 @@ class MolgenaReconstructTask:
         self._encode_mol.train()
         self._select_motif_mlp.train()
         self._select_mol_attachment.train()
-        self._classify_mol_bond.train()
+        # self._classify_mol_bond.train()
 
         # The actual training step, inference the model and compute the loss using the labels
         self._optimizer.zero_grad()
