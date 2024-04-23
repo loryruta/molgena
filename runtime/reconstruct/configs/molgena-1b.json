@@ -4,7 +4,7 @@
   "mol_repr_dim": 256,
 
   "encode_mol": {
-    "num_steps": 20,
+    "num_steps": 40,
     "node_features_dim": "{atom_features}",
     "edge_features_dim": "{bond_features}",
     "node_hidden_dim": "{mol_repr_dim}",
@@ -19,22 +19,27 @@
     "mol_repr_dim": "{mol_repr_dim}",
     "num_motifs": 4331,
     "reconstruction_mode": true,
-    "hidden_layers": [256, 256, 512, 1024]
+    "hidden_layers": [512, 1024]
   },
   "select_mol_attachment": {
     "mol_a_repr_dim": "{mol_repr_dim}",
     "mol_b_mpn": {
-      "num_steps": 20,
+      "num_steps": 30,
       "node_features_dim": "{atom_features}",
       "edge_features_dim": "{bond_features}",
-      "node_hidden_dim": 128,
+      "node_hidden_dim": 96,
       "edge_hidden_dim": 64,
       "W1": [128],
       "W2": [128],
       "W3": [128],
       "U1": [128],
       "U2": [128]
-    }
+    },
+    "pick_atom_mlp": {
+      "hidden_layers": [512, 256, 128, 64]
+    },
+    "rnn_iterations": 2,
+    "rnn_hidden_size": 128
   },
   "classify_mol_bond": {
     "mpn": {

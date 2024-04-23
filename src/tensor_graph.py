@@ -44,13 +44,16 @@ class TensorGraph:
         offsets = exclusive_prefix_sum(counts)
 
         if batch_size is not None:
+            padded_indices = torch.empty((batch_size,), dtype=torch.int64).fill_(-1)
+            padded_indices[indices] = indices
+
             padded_counts = torch.zeros((batch_size,), dtype=torch.int64)
             padded_counts.scatter_(0, indices, counts)
 
             padded_offsets = torch.zeros((batch_size,), dtype=torch.int64)
             padded_offsets.scatter_(0, indices, offsets)
 
-            return indices, padded_counts, padded_offsets
+            return padded_indices, padded_counts, padded_offsets
 
         return indices, counts, offsets
 

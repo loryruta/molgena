@@ -124,6 +124,7 @@ class MolgenaReconstructTask:
         self._motif_vocab = MotifVocab.load()
         logging.info(f"Motif vocabulary loaded; Num motifs: {len(self._motif_vocab)}")
 
+        logging.info(f"Loading motif graphs (may take a while)...")
         self._motif_graphs = load_motif_graphs_pkl(TRAINING_MOTIF_GRAPHS_PKL)
         logging.info(f"Motif graphs loaded; Num motif graphs: {len(self._motif_graphs)}")
 
@@ -164,16 +165,22 @@ class MolgenaReconstructTask:
         self._lr_scheduler = CosineAnnealingLR(self._optimizer, T_max=50)
         logging.info(f"Optimizer ready")
 
+        # Model debug variables
+        self._no_random = False  # If set, disable all random choices within the training
+        self._only_first_batch = False  # If set, only use the first batch (always the same)
+
         self._epoch = 0
+        self._run_iteration = 0
 
         # Create tensorboard writer
         self._writer = SummaryWriter(log_dir=self._runs_dir)
-        self._writer_step = 0
 
         # Load latest checkpoint if any
         latest_checkpoint_path = path.join(self._checkpoints_dir, "checkpoint-latest.pt")
         if path.exists(latest_checkpoint_path):
             self._load_checkpoint(latest_checkpoint_path)
+        else:
+            logging.info("Checkpoint not found, starting fresh...")
 
     def _collate_fn(self, raw_batch: List[Tuple[int, str]]) -> Tuple[List[str], List[nx.Graph], TensorGraph]:
         mol_smiles_list = [mol_smiles for _, mol_smiles in raw_batch]
@@ -197,12 +204,12 @@ class MolgenaReconstructTask:
         labels.next_motif_ids = []
         labels.bond_labels = []
 
-        # SEED = 23
-        rand = Random()  # Random(SEED + 321)
+        seed = 23 if self._no_random else None
+        rand = Random(seed)
 
         # Iterate over every batch item
         for i, motif_graph in enumerate(motif_graphs):
-            motif_subgraph_indices = sample_motif_subgraph(motif_graph)
+            motif_subgraph_indices = sample_motif_subgraph(motif_graph, seed=seed)
 
             next_cluster_id: Optional[int]
 
@@ -265,6 +272,9 @@ class MolgenaReconstructTask:
 
             labels.bond_labels.append(local_bond_labels)
 
+        # logging.debug(f"Next motif IDs: {labels.next_motif_ids}")
+        # logging.debug(f"Partial SMILES ({len(labels.partial_mol_smiles_list)}): {labels.partial_mol_smiles_list}")
+
         return labels
 
     def _tensorize_labels(self, labels: Labels):
@@ -312,8 +322,6 @@ class MolgenaReconstructTask:
                 print(f"ELEMENT {batch_idx}; BOND LABELS: {batch_element}")
 
             # batch_element is a list of (partial_mol_atom, motif_atom, bond_type)
-
-            # tensor([1234]) + tensor([1, 2, 3, 4])
 
             # Partial molecule true candidates
             partial_mol_atom_indices = partial_mol_batch_offsets[batch_idx] + torch.tensor([
@@ -408,18 +416,23 @@ class MolgenaReconstructTask:
         """
 
         a1_ = 1.
-        a21 = 10.
-        a22 = 10.
+        a21 = 17.5
+        a22 = 11.4
         a3_ = 1.
 
         loss = Loss()
+        loss.l1_ = torch.tensor(0)
+        loss.l21 = torch.tensor(0)
+        loss.l22 = torch.tensor(0)
+        loss.l3_ = torch.tensor(0)
+
         loss.l1_ = a1_ * F.cross_entropy(pred.batched_motif_distr, labels.next_motif_labels)
-        loss.l21 = a21 * F.binary_cross_entropy(pred.batched_partial_mol_candidates,
-                                                labels.batched_partial_mol_candidates).mean()
-        loss.l22 = a22 * F.binary_cross_entropy(pred.batched_motif_candidates, labels.batched_motif_candidates).mean()
+        loss.l21 = a21 * F.binary_cross_entropy(
+            pred.batched_partial_mol_candidates, labels.batched_partial_mol_candidates)
+        loss.l22 = a22 * F.binary_cross_entropy(
+            pred.batched_motif_candidates, labels.batched_motif_candidates)
         # loss.l3_ = \
         #     cross_entropy(pred.batched_bond_types, labels.batched_bond_labels, dim=1).mean()
-        loss.l3_ = torch.tensor(0)
 
         loss.total_loss = loss.l1_ + loss.l21 + loss.l22 + loss.l3_
 
@@ -440,6 +453,8 @@ class MolgenaReconstructTask:
             motif_smiles_list.append(motif_smiles)
         self._motif_mol_graphs = tensorize_smiles_list(motif_smiles_list)
 
+        # logging.debug(f"Motif SMILES list: {motif_smiles_list}")
+
         self._tensorize_labels(labels)  # Tensorize for practical usage
 
         torch.autograd.set_detect_anomaly(True)
@@ -459,7 +474,6 @@ class MolgenaReconstructTask:
 
         self._optimizer.step()
 
-        # lr = self._optimizer.param_groups[0]['lr']
         lr = self._lr_scheduler.get_last_lr()[0]
         self._lr_scheduler.step()
 
@@ -470,7 +484,7 @@ class MolgenaReconstructTask:
             "l22": loss.l22,
             "l3": loss.l3_,
             # "total": loss.total_loss,
-        }, self._writer_step)
+        }, self._run_iteration)
 
         # Log
         num_batches = len(self._training_set) // self._batch_size
@@ -517,8 +531,6 @@ class MolgenaReconstructTask:
             m21_accuracy = iou(pred.batched_partial_mol_candidates > 0.5, labels.batched_partial_mol_candidates > 0.5)
             m22_accuracy = iou(pred.batched_motif_candidates > 0.5, labels.batched_motif_candidates > 0.5)
             m3_accuracy = 0.0
-
-            #
             # m3_accuracy = (
             #                       torch.argmax(pred.batched_bond_types, dim=1) == torch.argmax(
             #                   labels.batched_bond_labels,
@@ -531,7 +543,7 @@ class MolgenaReconstructTask:
                 "m21": m21_accuracy,
                 "m22": m22_accuracy,
                 "m3": m3_accuracy
-            }, self._writer_step)
+            }, self._run_iteration)
 
             # Log
             logging.info(f"Test run; Accuracy: "
@@ -591,14 +603,17 @@ class MolgenaReconstructTask:
         for i, batch in enumerate(self._training_dataloader):
             self._train_step(i, batch)
 
-            if (i + 1) % 100 == 0:
+            self._run_iteration += 1
+
+            if self._run_iteration % 1000 == 0:
+                self._save_checkpoint()
+
+            if self._only_first_batch:
+                break
+
+            # If "_only_first_batch", don't test
+            if self._run_iteration % 100 == 0:
                 self._test()
-
-            if (i + 1) % 10 == 0:
-                self._writer.flush()
-            self._writer_step += 1
-
-        self._save_checkpoint()
 
     def train(self):
         logging.info("Training started...")

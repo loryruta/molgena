@@ -32,11 +32,20 @@ def iou(a: torch.Tensor, b: torch.Tensor, dim: int = 0):
 
 
 def create_mlp(in_features_dim: int, out_features_dim: int, hidden_layers_dim: List[int],
-               non_linearity_func: Optional[nn.Module] = nn.ReLU()) -> nn.Sequential:
+               non_linearity_func: Optional[nn.Module] = nn.ReLU(),
+               dropout: bool = False
+               ) -> nn.Sequential:
     layers_dim = [in_features_dim] + hidden_layers_dim + [out_features_dim]
     layers = nn.Sequential()
     for i in range(0, len(layers_dim) - 1):
-        layers.append(nn.Linear(layers_dim[i], layers_dim[i + 1]))
-        if non_linearity_func is not None:
+        layers.append(nn.Linear(layers_dim[i], layers_dim[i + 1], bias=True))
+        is_last_layer = i == len(layers_dim) - 2
+        if (non_linearity_func is not None) and (not is_last_layer):
             layers.append(non_linearity_func)
+        if dropout:
+            layers.append(nn.Dropout())
     return layers
+
+
+def tensor_str(t: torch.Tensor) -> str:
+    return f"Tensor(shape={t.shape}, min={t.min().item()}, max={t.max().item()}, avg={t.mean().item()})"

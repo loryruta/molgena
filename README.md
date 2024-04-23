@@ -163,3 +163,4 @@ generated and test set_
 ###### References
 
 - https://github.com/molecularsets/moses?tab=readme-ov-file#metrics
+- https://keras.io/examples/graph/mpnn-molecular-graphs/

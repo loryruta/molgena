@@ -12,4 +12,4 @@ export DATASET_DIR=$DATASET_DIR
 
 python ./train/train_reconstruct.py \
   --train-dir "$SCRIPT_DIR/" \
-  --config "$SCRIPT_DIR/configs/molgena-1.json"
+  --config "$SCRIPT_DIR/configs/molgena-1b.json"
