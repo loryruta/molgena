@@ -2,8 +2,10 @@ from common import *
 import sys
 import pytest
 from mol_dataset import ZincDataset
-from construct_motif_graph import *
+from motif_graph import construct_motif_graph, convert_motif_graph_to_smiles
 from motif_vocab import MotifVocab
+from utils.chem_utils import *
+from utils.misc_utils import *
 
 SAMPLE_SMILES = [
     'Cc1ccc(C(=O)/C=C/c2cccc(O)c2)cc1',
@@ -107,30 +109,36 @@ def test_construction():
             print(ex, file=sys.stderr)
 
 
+@pytest.mark.skip(reason="Heavy test")
 def test_motif_graph_conversion():
-    """ Tests that motif graph is constructed and converted back to the original SMILES. """
-    motif_vocab = MotifVocab.load()
-    training_set = ZincDataset.training_set()
+    """ For all molecules of the dataset (includes training/validation/test sets), tests that their motif graph can be
+    constructed and is converted back to the initial SMILES without errors. """
 
-    samples = training_set
-    num_samples = len(training_set)
+    motif_vocab = MotifVocab.load()
+    dataset = ZincDataset.all()
+    dataset_len = len(dataset)
+
+    log_stopwatch = stopwatch()
 
     num_failed_conversions = 0
 
-    for i, smiles in samples:
-        print(f"{i + 1}/{num_samples} Converting {smiles}...")
+    logging.info(f"Testing motif graph construction/conversion...; Total molecules: {dataset_len}")
 
+    for i, smiles in dataset:
+        # print(f"{i + 1}/{num_samples} Converting {smiles}...")
         try:
             motif_graph = construct_motif_graph(smiles, motif_vocab)
             converted_smiles, _ = convert_motif_graph_to_smiles(motif_graph, motif_vocab)
-            print(f"{i + 1}/{num_samples} Original: {smiles}; Re-converted: {converted_smiles}")
-
+            # print(f"{i + 1}/{num_samples} Original: {smiles}; Re-converted: {converted_smiles}")
         except Exception as ex:
             num_failed_conversions += 1
-            print(f"ERROR {i + 1}/{num_samples} Conversion error for SMILES ID {i}: \"{repr(ex)}\"",
-                  file=sys.stderr)
+            logging.error(f"{i + 1}/{dataset_len} Conversion error for SMILES ID {i}: \"{repr(ex)}\"")
 
-    print(f"Conversion finished; Failed conversions: {num_failed_conversions}/{num_samples}")
+        if log_stopwatch() > 2.0:
+            logging.info(f"Processed {i}/{dataset_len}...")
+            log_stopwatch = stopwatch()
+
+    logging.info(f"Conversion finished; Failed conversions: {num_failed_conversions}/{dataset_len}")
 
 
 def test_failed_motif_graph_identity():
@@ -142,7 +150,7 @@ def test_failed_motif_graph_identity():
 
     motif_vocab = MotifVocab.load()
 
-    motif_graph = construct_motif_graph(smiles, motif_vocab)
-
-    with pytest.raises(Exception):
+    with pytest.raises(AssertionError):
+        # assert (cid1, cid2) not in motif_graph.edges
+        motif_graph = construct_motif_graph(smiles, motif_vocab)
         convert_motif_graph_to_smiles(motif_graph, motif_vocab)

@@ -12,12 +12,12 @@ def dt_str(dt: float) -> str:
     :param dt: time in seconds
     """
     if dt >= 0.1:
-        return f"{dt:.1f}s"
+        return f"{dt:.1f} s"
     ms = dt * 1000
     if ms >= 0.1:
-        return f"{ms:.1f}"
+        return f"{ms:.1f} ms"
     ns = ms * 1000000
-    return f"{int(ns)}"
+    return f"{int(ns)} ns"
 
 
 def stopwatch_str():

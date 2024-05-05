@@ -9,8 +9,8 @@ class MolDataset(Dataset):
     SMILES stored are not canonical and not said to be kekulized.
     """
 
-    def __init__(self, path_: str):
-        self.df = pd.read_csv(path_)
+    def __init__(self, df: pd.DataFrame):
+        self.df = df
 
     def __len__(self):
         return len(self.df)
@@ -21,24 +21,29 @@ class MolDataset(Dataset):
 
 
 class ZincDataset(MolDataset):
-    def __init__(self, path_: str):  # Private
-        super().__init__(path_)
-
-    @staticmethod
-    def all():
-        return ZincDataset(DATASET_CSV)
+    def __init__(self, df: pd.DataFrame):
+        super().__init__(df)
 
     @staticmethod
     def training_set():
-        return ZincDataset(TRAINING_CSV)
+        return ZincDataset(pd.read_csv(TRAINING_CSV))
 
     @staticmethod
     def validation_set():
-        return ZincDataset(VALIDATION_CSV)
+        return ZincDataset(pd.read_csv(VALIDATION_CSV))
 
     @staticmethod
     def test_set():
-        return ZincDataset(TEST_CSV)
+        return ZincDataset(pd.read_csv(TEST_CSV))
+
+    @staticmethod
+    def all():
+        """ Returns the union of training/validation and test sets. """
+        return ZincDataset(pd.concat([
+            ZincDataset.training_set().df,
+            ZincDataset.validation_set().df,
+            ZincDataset.test_set().df
+        ]))
 
 
 def _main():

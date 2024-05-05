@@ -123,11 +123,18 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
         assert ((cid1, cid2) in motif_graph.edges) == ((cid2, cid1) in motif_graph.edges)
 
         # Add bond cluster1<->cluster2 with attachment information
-        if (cid1, cid2) not in motif_graph.edges:
-            motif_graph.add_edge(cid1, cid2, attachment={})
-            motif_graph.add_edge(cid2, cid1, attachment={})
-        motif_graph.edges[cid1, cid2]['attachment'][motif_a1, motif_a2] = bond.GetBondType()
-        motif_graph.edges[cid2, cid1]['attachment'][motif_a2, motif_a1] = bond.GetBondType()
+
+        # Every (cluster1, cluster2) pair must have exactly 1 attachment (i.e. 1 bond),
+        # therefore when reaching this point, attachment information shouldn't be already present
+        assert (cid1, cid2) not in motif_graph.edges
+        assert (cid2, cid1) not in motif_graph.edges
+
+        motif_graph.add_edge(cid1, cid2, attachment={})
+        motif_graph.add_edge(cid2, cid1, attachment={})
+
+        # Store attachment information as a (motif atom index 1, motif atom index 2, bond type)
+        motif_graph.edges[cid1, cid2]['attachment'] = (motif_a1, motif_a2, bond.GetBondType())
+        motif_graph.edges[cid2, cid1]['attachment'] = (motif_a2, motif_a1, bond.GetBondType())
 
     return motif_graph
 

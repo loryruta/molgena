@@ -42,12 +42,10 @@ class EncodeMolMPN(nn.Module):
         assert mol_graph.node_hiddens is not None
         assert mol_graph.edge_hiddens is not None
 
-        has_edges = mol_graph.edges.numel() > 0
-
         from_nodes: torch.Tensor
         to_nodes: torch.Tensor
 
-        if has_edges:
+        if mol_graph.has_edges():
             from_nodes, to_nodes = mol_graph.edges[:]
 
             W1_x_u = self.W1(mol_graph.node_features)  # (|V|, EH,)
@@ -77,7 +75,7 @@ class EncodeMolMPN(nn.Module):
         U2_vu_hidden = self.U2(mol_graph.edge_hiddens)  # (|E|, NH,)
 
         U2_vu_hidden_sum = torch.zeros((mol_graph.num_nodes(), self.node_hidden_dim,))  # (|V|, NH,)
-        if has_edges:
+        if mol_graph.has_edges():
             to_nodes = mol_graph.edges[1]
             U2_vu_hidden_sum = U2_vu_hidden_sum.index_add(0, to_nodes, U2_vu_hidden)  # (|V|, EH,)
 

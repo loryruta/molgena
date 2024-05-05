@@ -41,13 +41,11 @@ def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph, motif_vocab: MotifVoc
 
     # Interconnect the clusters using attachment information
     for cid1, cid2 in motif_graph.edges:
-        attachment = motif_graph.edges[cid1, cid2]['attachment']
-
-        for (motif_a1, motif_a2), bond_type in attachment.items():
-            new_a1 = cluster_atom_map[(cid1, motif_a1)]
-            new_a2 = cluster_atom_map[(cid2, motif_a2)]
-            if new_mol.GetBondBetweenAtoms(new_a1, new_a2) is None:
-                new_mol.AddBond(new_a1, new_a2, bond_type)
+        motif_a1, motif_a2, bond_type = motif_graph.edges[cid1, cid2]['attachment']
+        new_a1 = cluster_atom_map[(cid1, motif_a1)]
+        new_a2 = cluster_atom_map[(cid2, motif_a2)]
+        if new_mol.GetBondBetweenAtoms(new_a1, new_a2) is None:
+            new_mol.AddBond(new_a1, new_a2, bond_type)
 
     smiles = Chem.MolToSmiles(new_mol)
     return canon_smiles(smiles)[0], cluster_atom_map

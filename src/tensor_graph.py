@@ -11,8 +11,8 @@ class TensorGraph:
     """
 
     node_features: torch.FloatTensor
-    edge_features: torch.FloatTensor
-    edges: torch.LongTensor
+    edge_features: Optional[torch.FloatTensor] = None
+    edges: Optional[torch.LongTensor] = None
     batch_indices: Optional[torch.LongTensor] = None
     node_hiddens: Optional[torch.FloatTensor] = None
     edge_hiddens: Optional[torch.FloatTensor] = None
@@ -20,8 +20,11 @@ class TensorGraph:
     def num_nodes(self):
         return len(self.node_features)
 
+    def has_edges(self):
+        return (self.edges is not None) and (self.edges.numel() > 0)
+
     def num_edges(self):
-        return len(self.edge_features)
+        return 0 if self.edge_features is None else len(self.edge_features)
 
     def batch_size(self) -> int:
         """ Counts the number of unique batch indices.
@@ -57,12 +60,27 @@ class TensorGraph:
 
         return indices, counts, offsets
 
+    def _validate_bidirectional_edges(self):
+        """ Validates that both directions of the same connection, are put in consecutive order.
+        This is done to ease retrieving the opposite direction of an edge; e.g. in EncodeMolMPN.
+        """
+        assert self.edges.shape[1] % 2 == 0
+        from_nodes, to_nodes = self.edges
+
+        indices = torch.arange(0, self.num_edges())
+        swap_indices = indices + ((indices + 1) % 2) * 2 - 1
+        assert (cast(torch.BoolTensor, from_nodes == to_nodes[swap_indices])).all()
+
     def validate(self):
-        assert self.node_features is not None and len(self.node_features) == self.num_nodes()
-        assert self.edge_features is not None and len(self.edge_features) == self.num_edges()
-        assert self.edges is not None and len(self.edges) == self.num_edges()
-        assert self.node_hiddens is None or len(self.node_hiddens) == self.num_nodes()
-        assert self.edge_hiddens is None or len(self.edge_hiddens) == self.num_edges()
+        """ Validates that TensorGraph's values are correct. """
+        assert (self.node_features is not None) and len(self.node_features) == self.num_nodes()
+        if self.edges is not None:
+            assert self.edge_features is not None
+            assert self.edges.shape == (2, self.edge_features.shape[0])
+            # For our use-cases, edges are always bidirectional: both for mol_graph and mgraphs
+            self._validate_bidirectional_edges()
+        assert (self.node_hiddens is None) or len(self.node_hiddens) == self.num_nodes()
+        assert (self.edge_hiddens is None) or len(self.edge_hiddens) == self.num_edges()
 
     def create_hiddens(self, node_hidden_dim: int, edge_hidden_dim: int) -> None:
         self.node_hiddens = cast(torch.FloatTensor, torch.zeros((self.num_nodes(), node_hidden_dim,)))
@@ -85,12 +103,18 @@ class TensorGraph:
                 f"  edge_hiddens={None if self.edge_hiddens is None else self.edge_hiddens.shape}\n"
                 f"]")
 
+
 def batch_tensor_graphs(graphs: List[TensorGraph]):
     """ Given a list of TensorGraph, batch them together producing one TensorGraph. """
 
     assert len(graphs) > 0
 
-    node_features, edge_features, edges, batch_indices, node_hiddens, edge_hiddens = [], [], [], [], [], []
+    node_features = []
+    edge_features = []
+    edges = []
+    batch_indices = []
+    node_hiddens = []
+    edge_hiddens = []
 
     node_offset = 0
 
@@ -103,8 +127,9 @@ def batch_tensor_graphs(graphs: List[TensorGraph]):
         num_nodes = graph.num_nodes()
 
         node_features.append(graph.node_features)
-        edge_features.append(graph.edge_features)
-        edges.append(graph.edges + node_offset)
+        if graph.edge_features is not None:
+            edge_features.append(graph.edge_features)
+            edges.append(graph.edges + node_offset)
         batch_indices.extend([batch_idx] * num_nodes)
 
         # Graphs should all have hidden vectors or none of them
@@ -121,8 +146,9 @@ def batch_tensor_graphs(graphs: List[TensorGraph]):
         batch_idx += 1
 
     batched_graph.node_features = torch.cat(node_features)
-    batched_graph.edge_features = torch.cat(edge_features)
-    batched_graph.edges = torch.cat(edges, dim=1)
+    if len(edge_features) > 0:
+        batched_graph.edge_features = torch.cat(edge_features)
+        batched_graph.edges = torch.cat(edges, dim=1)
     batched_graph.batch_indices = torch.tensor(batch_indices, dtype=torch.long)
     batched_graph.node_hiddens = torch.cat(node_hiddens) if has_node_hiddens else None
     batched_graph.edge_hiddens = torch.cat(node_hiddens) if has_node_hiddens else None

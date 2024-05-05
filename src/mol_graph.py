@@ -17,7 +17,7 @@ from utils.tensor_utils import *
 
 # TODO rename to tensor_mol_graph (mol_graph is too generic)
 
-def _create_atom_features(atom) -> List[float]:
+def create_atom_features(atom) -> List[float]:
     atomic_num = atom.GetAtomicNum()
     # Atom.GetChiralTag()
     explicit_valence = atom.GetExplicitValence()
@@ -43,6 +43,12 @@ def _create_atom_features(atom) -> List[float]:
     mass = (mass - 13.44766) / 4.91093
 
     return [atomic_num, explicit_valence, formal_charge, 0, mass]
+
+
+def create_bond_type_features(bond_type: Chem.BondType) -> torch.Tensor:
+    # TODO one-hot feature vector?
+    # TODO call this function from _create_bond_features
+    return torch.tensor([int(bond_type)], dtype=torch.float32)
 
 
 def _create_bond_features(bond) -> List[float]:
@@ -84,9 +90,9 @@ def tensorize_smiles(smiles: Optional[str]) -> TensorGraph:
     if smiles:  # smiles != "" and smiles is not None
         mol = Chem.MolFromSmiles(smiles)
 
-        for atom in mol.GetAtoms():
+        for atom in mol.GetAtoms():  # Atoms are iterated in index order (from 0 to N)
             atom.SetAtomMapNum(atom.GetIdx())
-            atom_features.append(_create_atom_features(atom))
+            atom_features.append(create_atom_features(atom))
 
         for bond in mol.GetBonds():
             u = bond.GetBeginAtomIdx()
