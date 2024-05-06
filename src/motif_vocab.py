@@ -38,6 +38,9 @@ class MotifVocab:
         smiles, _ = canon_smiles(smiles)
         return self.df_smiles.loc[smiles] if smiles in self.df_smiles.index else None
 
+    def end_motif_id(self) -> int:
+        return len(self)
+
     def __iter__(self):
         for _, row in self.df_id.iterrows():
             yield row['smiles']

@@ -7,13 +7,13 @@ from typing import *
 def _sample_subgraph_uniformly(graph: nx.DiGraph, seed: Optional[int]) -> Set[int]:
     rand = Random(seed)
 
-    num_subgraph_nodes = rand.randint(0, len(graph.nodes) - 1)
+    num_subgraph_nodes = rand.randint(0, len(graph.nodes))
 
     if num_subgraph_nodes == 0:
         rand.seed()
         return set({})
 
-    initial_node = rand.randint(0, len(graph.nodes) - 1)
+    initial_node = rand.choice(list(graph.nodes))
     if num_subgraph_nodes == 1:
         return {initial_node}
 

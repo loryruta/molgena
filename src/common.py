@@ -34,7 +34,7 @@ TEST_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "test_motif_graphs.pkl")
 
 
 def _on_import():
-    seed = 865002448518316373
+    seed = 865002448
 
     # Setup logging
     logging.basicConfig(format='%(asctime)s [%(levelname)-5s] %(message)s', encoding='utf-8', level=logging.DEBUG)
