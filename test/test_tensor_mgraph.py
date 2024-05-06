@@ -91,7 +91,11 @@ def mgraph_encoder():
     })
 
 
+@pytest.mark.skip(reason="Slow")
 def test_mgraph_automorphism(mgraph_encoder):
+    """ Iterates over the molecules of all datasets (training/validation/test), and logs how many mgraphs have their at
+    least two isomorphic nodes. """
+
     motif_vocab = MotifVocab.load()
 
     dataset = ZincDataset.all()  # Consider all training/validation/test sets
