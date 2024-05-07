@@ -35,6 +35,8 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
 
     # Assign every mol atom to its motif ID
     candidates = extract_motif_candidates(mol_smiles)
+    candidates = sorted(candidates)  # For consistent mgraph across multiple runs
+
     for candidate_idx, candidate in enumerate(candidates):
         row = motif_vocab.at_smiles_or_null(candidate)
         if row is not None:
@@ -52,6 +54,8 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
         else:
             # The candidate must have been split in bonds and rings
             parts = decompose_motif_candidate(candidate)
+            parts = sorted(parts)  # For consistent mgraph across multiple runs
+
             for part in parts:
                 row = motif_vocab.at_smiles_or_null(part)
                 if row is None:
@@ -71,7 +75,7 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
                 next_cid += 1
 
     # Finally construct motif graph
-    motif_graph = nx.DiGraph()
+    mgraph = nx.DiGraph()
 
     clusters: Set[ClusterInfo] = set(atom_clusters.values())  # Set of unique clusters
 
@@ -85,8 +89,8 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
         cluster_motif_indices[cluster.cid] = canon_atom_order
 
     # Add nodes
-    for cluster in clusters:
-        motif_graph.add_node(cluster.cid, motif_id=cluster.mid)
+    for cluster in sorted(clusters, key=lambda cluster_: cluster_.cid):
+        mgraph.add_node(cluster.cid, motif_id=cluster.mid)
 
     # Add edges
     mol = Chem.MolFromSmiles(mol_smiles)
@@ -120,23 +124,23 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
         cid2 = cluster2.cid
 
         # Sanity check: if bond was present, it must be bidirectional
-        assert ((cid1, cid2) in motif_graph.edges) == ((cid2, cid1) in motif_graph.edges)
+        assert ((cid1, cid2) in mgraph.edges) == ((cid2, cid1) in mgraph.edges)
 
         # Add bond cluster1<->cluster2 with attachment information
 
         # Every (cluster1, cluster2) pair must have exactly 1 attachment (i.e. 1 bond),
         # therefore when reaching this point, attachment information shouldn't be already present
-        assert (cid1, cid2) not in motif_graph.edges
-        assert (cid2, cid1) not in motif_graph.edges
+        assert (cid1, cid2) not in mgraph.edges
+        assert (cid2, cid1) not in mgraph.edges
 
-        motif_graph.add_edge(cid1, cid2, attachment={})
-        motif_graph.add_edge(cid2, cid1, attachment={})
+        mgraph.add_edge(cid1, cid2, attachment={})
+        mgraph.add_edge(cid2, cid1, attachment={})
 
         # Store attachment information as a (motif atom index 1, motif atom index 2, bond type)
-        motif_graph.edges[cid1, cid2]['attachment'] = (motif_a1, motif_a2, bond.GetBondType())
-        motif_graph.edges[cid2, cid1]['attachment'] = (motif_a2, motif_a1, bond.GetBondType())
+        mgraph.edges[cid1, cid2]['attachment'] = (motif_a1, motif_a2, bond.GetBondType())
+        mgraph.edges[cid2, cid1]['attachment'] = (motif_a2, motif_a1, bond.GetBondType())
 
-    return motif_graph
+    return mgraph
 
 
 def _visualize_motif_graph():
