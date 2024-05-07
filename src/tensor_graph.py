@@ -3,6 +3,9 @@ import torch_geometric
 from typing import *
 from utils.tensor_utils import *
 
+if TYPE_CHECKING:
+    from model.encode_mol import EncodeMol
+
 
 class TensorGraph:
     """ A graph, or combination of multiple graphs (batch), tensorized for efficient parallel computation.
@@ -25,6 +28,9 @@ class TensorGraph:
 
     def num_edges(self):
         return 0 if self.edge_features is None else len(self.edge_features)
+
+    def is_batched(self):
+        return self.batch_indices is not None
 
     def batch_size(self) -> int:
         """ Counts the number of unique batch indices.
@@ -153,3 +159,31 @@ def batch_tensor_graphs(graphs: List[TensorGraph]):
     batched_graph.node_hiddens = torch.cat(node_hiddens) if has_node_hiddens else None
     batched_graph.edge_hiddens = torch.cat(node_hiddens) if has_node_hiddens else None
     return batched_graph
+
+
+def find_node_orbit(graph: TensorGraph, node_idx: int, detector: 'EncodeMol') -> List[int]:
+    """ Given an unbatched TensorGraph, and a node, finds the orbit containing such node (including it).
+    The orbit detection works by computing node_hidden(s) with an MPN, and then checking for equal node_hidden(s).
+
+    :param graph:
+        A *unbatched* TensorGraph.
+    :param node_idx:
+        The node for which we want to find isomorphic nodes.
+    :param detector:
+        The MPN used to detect the node's orbit (e.g. EncodeMol).
+    :return:
+        List of node indices lying in the same orbit (including the node itself).
+    """
+
+    assert not graph.is_batched()
+
+    batched_graph = batch_tensor_graphs([graph])  # TODO API-wise is preferable to work on graph
+
+    with torch.no_grad():
+        detector(batched_graph, 1)
+
+    rounded_node_hiddens = torch.round(batched_graph.node_hiddens, decimals=7)
+    isomorphic_nodes = \
+        torch.nonzero(torch.all(rounded_node_hiddens == rounded_node_hiddens[node_idx], dim=1)).squeeze(-1).tolist()
+    assert len(isomorphic_nodes) > 0  # Self should be always included
+    return isomorphic_nodes

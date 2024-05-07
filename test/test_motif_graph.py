@@ -154,3 +154,19 @@ def test_failed_motif_graph_identity():
         # assert (cid1, cid2) not in motif_graph.edges
         motif_graph = construct_motif_graph(smiles, motif_vocab)
         convert_motif_graph_to_smiles(motif_graph, motif_vocab)
+
+
+def test_construct_mgraph_consistency():
+    """ Checks that multiple construct_motif_graph calls lead to identical mgraph(s) (including nodes/edges order). """
+
+    motif_vocab = MotifVocab.load()
+
+    mol_smiles = "C[C@H]1CC[C@@H](C)C[NH+]1CC(=O)NCCc1ccccc1"
+    mgraphs = []
+    for _ in range(0, 10):
+        mgraphs.append(construct_motif_graph(mol_smiles, motif_vocab))
+
+    mgraph_ref = mgraphs[0]
+    for i in range(1, 10):
+        assert mgraph_ref.nodes == mgraphs[i].nodes
+        assert mgraph_ref.edges == mgraphs[i].edges

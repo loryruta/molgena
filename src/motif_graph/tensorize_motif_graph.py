@@ -21,7 +21,9 @@ def create_mgraph_node_feature_vector(motif_id: int) -> torch.Tensor:
     return feature_vector
 
 
-def tensorize_mgraph(mgraph: nx.DiGraph, motif_vocab: MotifVocab) -> TensorGraph:
+def tensorize_mgraph(mgraph: nx.DiGraph,
+                     motif_vocab: MotifVocab,
+                     return_node_mappings: bool = False) -> Union[TensorGraph, Tuple[TensorGraph, Dict[int, int]]]:
     tensor_graph = TensorGraph()
 
     tensor_graph.node_features = torch.zeros((len(mgraph.nodes),))
@@ -32,13 +34,21 @@ def tensorize_mgraph(mgraph: nx.DiGraph, motif_vocab: MotifVocab) -> TensorGraph
 
     # print([node['motif_id'] for _, node in mgraph.nodes(data=True)])
 
+    # Maps:
+    #   cid -> node_idx
+    # To which (sequential) node index was mapped the cid
+    node_mappings: Dict[int, int] = {}
+
     # Create node features
-    i = 0
-    for cid in sorted(mgraph.nodes):
-        mid = mgraph.nodes[cid]['motif_id']
-        node_features.append(create_mgraph_node_feature_vector(mid))
-        assert i == cid  # DEBUG: paranoia check
-        i += 1
+    for cid in mgraph.nodes:
+        # IMPORTANT: don't assume nodes to be sequential (e.g. 0, 1, 2, 3, ...)!
+        # For example: CID(s) in partial molecules aren't, some could be missing (e.g. 8, 4, 1, 5)!
+
+        assert type(cid) is int
+        node_idx = len(node_features)
+        node_features.append(create_mgraph_node_feature_vector(mgraph.nodes[cid]['motif_id']))
+
+        node_mappings[cid] = node_idx
 
     # Create edge features
     undirected_edges = [(u, v) for u, v in mgraph.edges if u < v]
@@ -60,10 +70,10 @@ def tensorize_mgraph(mgraph: nx.DiGraph, motif_vocab: MotifVocab) -> TensorGraph
         bond_features = create_bond_type_features(bond_type)
 
         edge_features.append(torch.cat([u_atom_features, bond_features, v_atom_features]))  # uv_features
-        edges.append([u, v])
+        edges.append([node_mappings[u], node_mappings[v]])
 
         edge_features.append(torch.cat([v_atom_features, bond_features, u_atom_features]))  # vu_features
-        edges.append([v, u])
+        edges.append([node_mappings[v], node_mappings[u]])
 
     tensor_graph.node_features = torch.stack(node_features)
     if edge_features:
@@ -72,4 +82,13 @@ def tensorize_mgraph(mgraph: nx.DiGraph, motif_vocab: MotifVocab) -> TensorGraph
 
     tensor_graph.validate()
 
-    return tensor_graph
+    if return_node_mappings:
+        return tensor_graph, node_mappings
+    else:
+        return tensor_graph
+
+
+def tensorize_mgraphs(mgraphs: List[nx.DiGraph], motif_vocab: MotifVocab) -> TensorGraph:
+    return batch_tensor_graphs([
+        tensorize_mgraph(mgraph, motif_vocab) for mgraph in mgraphs
+    ])

@@ -171,28 +171,36 @@ def test_visualize_mgraph_automorphisms(mgraph_encoder):
         "Cc1ccc(-n2cnnc2SC(C)C)cc1Cl"
     ]
     num_mol_smiles = len(mol_smiles_list)
-
-    num_cols = 6
+    num_side = ceil(sqrt(num_mol_smiles))
 
     for i, mol_smiles in enumerate(mol_smiles_list):
-        plt.subplot(ceil(num_mol_smiles / num_cols), num_cols, i + 1)
+        plt.subplot(num_side, num_side, i + 1)
 
         mgraph = construct_motif_graph(mol_smiles, motif_vocab)
-        tensor_mgraph = batch_tensor_graphs([tensorize_mgraph(mgraph, motif_vocab)])
+        tensor_mgraph, node_mappings = tensorize_mgraph(mgraph, motif_vocab, return_node_mappings=True)
+        tensor_mgraph = batch_tensor_graphs([tensor_mgraph])
         mgraph_encoder(tensor_mgraph, 1)
 
         rounded_node_hiddens = torch.round(tensor_mgraph.node_hiddens, decimals=7)
 
         # Set color node attribute based on the hash of its node_hidden
-        cid = 0
-        for rounded_node_hidden in rounded_node_hiddens:
-            mgraph.nodes[cid]['color'] = int_to_color(hash_tensor(rounded_node_hidden))
-            cid += 1
+        for cid in mgraph.nodes:
+            node_hidden = rounded_node_hiddens[node_mappings[cid]]
+            # mgraph.nodes[cid]['motif_id']
+            mgraph.nodes[cid]['idx'] = node_mappings[cid]
+            # mgraph.nodes[cid]['cid'] = cid
+            mgraph.nodes[cid]['color'] = int_to_color(hash_tensor(node_hidden))
 
-        motif_ids = nx.get_node_attributes(mgraph, 'motif_id')
-        color_map = nx.get_node_attributes(mgraph, 'color')
+        labels_mode = 'mid'  # 'cid' or 'mid'
+        labels_dict = {
+            'idx': {cid: mgraph.nodes[cid]['idx'] for cid in mgraph.nodes},
+            'cid': {cid: cid for cid in mgraph.nodes},
+            'mid': {cid: mgraph.nodes[cid]['motif_id'] for cid in mgraph.nodes},
+        }
+
         nx.draw(mgraph,
-                node_color=[color_map[node] for node in mgraph.nodes],  # Obtain colors in networkx nodes' order
+                node_color=[mgraph.nodes[node]['color'] for node in mgraph.nodes],
                 with_labels=True,
-                labels=motif_ids)
+                labels=labels_dict[labels_mode])
+
     plt.show()
