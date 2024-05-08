@@ -1,7 +1,6 @@
 import os
 from os import path
 import logging
-import torch
 
 
 def _check_required_env_vars():
@@ -25,15 +24,14 @@ TEST_CSV = path.join(DATASET_DIR, "test.csv")
 
 MOTIF_VOCAB_CSV = path.join(DATASET_DIR, "motif_vocab.csv")
 
-TRAINING_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "training_motif_graphs.pkl")
-VALIDATION_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "validation_motif_graphs.pkl")
-TEST_MOTIF_GRAPHS_PKL = path.join(DATASET_DIR, "test_motif_graphs.pkl")
-
+MGRAPHS_PKL = path.join(DATASET_DIR, "mgraphs.pkl")
 
 # ------------------------------------------------------------------------------------------------
 
 
 def _on_import():
+    import torch
+
     seed = 865002448
 
     # Setup logging
@@ -47,7 +45,8 @@ def _on_import():
     # Enable deterministic algorithms; see:
     # https://pytorch.org/docs/stable/notes/randomness.html
     logging.debug(f"Using pytorch's deterministic algorithms")
-    torch.use_deterministic_algorithms(True)
+    # RuntimeError: index_reduce_cuda does not have a deterministic implementation
+    # torch.use_deterministic_algorithms(True)
 
     # Use fixed random seed
     import random
