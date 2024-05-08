@@ -36,12 +36,15 @@ def test_unique_node_features():
             stopwatch_ = stopwatch()
 
 
-@pytest.mark.skip(reason="Slow")
 def test_node_features_repeatability():
     motif_vocab = MotifVocab.load()
     motif_vocab_len = len(motif_vocab)
     for mid in range(motif_vocab_len):
-        assert (create_mgraph_node_feature_vector(mid) == create_mgraph_node_feature_vector(mid)).all()
+        node_features1 = create_mgraph_node_feature_vector(mid)
+        node_features2 = create_mgraph_node_feature_vector(mid)
+        node_features3 = create_mgraph_node_feature_vector(mid)
+        assert (node_features1 == node_features2).all()
+        assert (node_features1 == node_features3).all()
 
 
 def test_tensorize_mgraph():

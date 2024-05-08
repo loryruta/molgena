@@ -187,3 +187,25 @@ def find_node_orbit(graph: TensorGraph, node_idx: int, detector: 'EncodeMol') ->
         torch.nonzero(torch.all(rounded_node_hiddens == rounded_node_hiddens[node_idx], dim=1)).squeeze(-1).tolist()
     assert len(isomorphic_nodes) > 0  # Self should be always included
     return isomorphic_nodes
+
+
+def compute_node_orbit_mask_with_precomputed_node_hiddens(
+        graph: TensorGraph,
+        node_indices: List[int]) -> torch.BoolTensor:
+    """ Given a graph and a list of node_indices, computes node orbits.
+    The graph must be batched with pre-computed node hiddens, while node_indices has one node per batch item.
+    The node, is the node we want to compute the orbit for (including itself).
+    Returns a mask over all nodes, where nodes on the same orbit of the given node are set to True.
+    """
+
+    assert graph.batch_indices is not None
+    assert graph.node_hiddens is not None
+
+    # Check that batch indices are sequential (none missing), and size is equal to the node_indices list length
+    assert graph.batch_size() == len(node_indices)
+    assert max(graph.batch_indices) == len(node_indices) - 1
+
+    node_hiddens = torch.round(graph.node_hiddens, decimals=7)  # So we can use ==
+    ref_node_hiddens = node_hiddens[node_indices, :]
+    ref_node_hiddens = torch.index_select(ref_node_hiddens, 0, graph.batch_indices)
+    return cast(torch.BoolTensor, torch.all(node_hiddens == ref_node_hiddens, dim=1))

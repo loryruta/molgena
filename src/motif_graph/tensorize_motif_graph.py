@@ -1,3 +1,4 @@
+from common import *
 from random import Random
 import torch
 from rdkit import Chem
@@ -10,15 +11,14 @@ from tensor_graph import TensorGraph
 def create_mgraph_node_feature_vector(motif_id: int) -> torch.Tensor:
     """ Creates a feature vector for a node having the given motif id. """
 
+    # TODO mgraph node features could be a possible weakness
+
     feature_vector_dim = 64
 
-    rand = Random(motif_id)
-    feature_vector = torch.zeros((feature_vector_dim,), dtype=torch.float32)
-    for i in range(rand.randint(10, 50)):
-        val = rand.random() * 2. - 1.
-        pos = rand.randint(0, feature_vector_dim - 1)
-        feature_vector[pos] += val
-    return feature_vector
+    default_device = "cuda" if torch.cuda.is_available() else "cpu"
+    generator = torch.Generator(device=default_device)  # TODO why I have to manually specify it here?
+    generator.manual_seed(hash(motif_id))
+    return torch.rand((feature_vector_dim,), generator=generator)
 
 
 def tensorize_mgraph(mgraph: nx.DiGraph,
@@ -51,8 +51,12 @@ def tensorize_mgraph(mgraph: nx.DiGraph,
         node_mappings[cid] = node_idx
 
     # Create edge features
-    undirected_edges = [(u, v) for u, v in mgraph.edges if u < v]
-    for u, v in undirected_edges:
+    for u, v in mgraph.edges:
+        if u >= v:  # Only visit one direction (while ensuring we have the other one)
+            assert (v, u) in mgraph.edges
+            assert u != v
+            continue
+
         motif_ai1, motif_ai2, bond_type = mgraph.edges[u, v]['attachment']
 
         # Sanity check: the edge in the opposite direction is supposed to exist
@@ -88,7 +92,20 @@ def tensorize_mgraph(mgraph: nx.DiGraph,
         return tensor_graph
 
 
-def tensorize_mgraphs(mgraphs: List[nx.DiGraph], motif_vocab: MotifVocab) -> TensorGraph:
-    return batch_tensor_graphs([
-        tensorize_mgraph(mgraph, motif_vocab) for mgraph in mgraphs
-    ])
+def tensorize_mgraphs(mgraphs: List[nx.DiGraph],
+                      motif_vocab: MotifVocab,
+                      return_node_mappings: bool = False) -> Tuple[TensorGraph, List[Dict[int, int]]]:
+    """ Tensorizes every given mgraph and returns a batched TensorGraph and a list of node mappings pointing to batched
+    nodes. One list entry for every batch item. """
+
+    # TODO use return_node_mappings
+    tensor_mgraphs = []
+    node_mappings = []
+    node_offset = 0
+    for mgraph in mgraphs:
+        tensor_graph, cur_node_mappings = \
+            tensorize_mgraph(mgraph, motif_vocab, return_node_mappings=True)
+        tensor_mgraphs.append(tensor_graph)
+        node_mappings.append({k: v + node_offset for k, v in cur_node_mappings.items()})
+        node_offset += tensor_graph.num_nodes()
+    return batch_tensor_graphs(tensor_mgraphs), node_mappings
