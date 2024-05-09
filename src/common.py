@@ -48,6 +48,9 @@ def _on_import():
     # RuntimeError: index_reduce_cuda does not have a deterministic implementation
     # torch.use_deterministic_algorithms(True)
 
+    # Richer debug information if autograd fails
+    torch.autograd.set_detect_anomaly(True)
+
     # Use fixed random seed
     import random
     import numpy as np

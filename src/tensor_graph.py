@@ -66,6 +66,12 @@ class TensorGraph:
 
         return indices, counts, offsets
 
+    def check_tightly_packed_batch(self):
+        """ Checks that batch elements are tightly packed (sequential with no missing batch index). """
+        assert self.is_batched()
+        values = torch.unique_consecutive(self.batch_indices)
+        return min(values) == 0 and (len(values) - 1 == max(values))
+
     def _validate_bidirectional_edges(self):
         """ Validates that both directions of the same connection, are put in consecutive order.
         This is done to ease retrieving the opposite direction of an edge; e.g. in EncodeMolMPN.
@@ -79,14 +85,15 @@ class TensorGraph:
 
     def validate(self):
         """ Validates that TensorGraph's values are correct. """
-        assert (self.node_features is not None) and len(self.node_features) == self.num_nodes()
+        assert (self.node_features is not None) and self.node_features.shape[0] == self.num_nodes()
         if self.edges is not None:
             assert self.edge_features is not None
             assert self.edges.shape == (2, self.edge_features.shape[0])
-            # For our use-cases, edges are always bidirectional: both for mol_graph and mgraphs
+            # For our use-cases, edges are always bidirectional (i.e. in mol_graph and mgraphs)
             self._validate_bidirectional_edges()
-        assert (self.node_hiddens is None) or len(self.node_hiddens) == self.num_nodes()
-        assert (self.edge_hiddens is None) or len(self.edge_hiddens) == self.num_edges()
+        assert (self.batch_indices is None) or self.batch_indices.shape[0] == self.num_nodes()
+        assert (self.node_hiddens is None) or self.node_hiddens.shape[0] == self.num_nodes()
+        assert (self.edge_hiddens is None) or self.edge_hiddens.shape[0] == self.num_edges()
 
     def create_hiddens(self, node_hidden_dim: int, edge_hidden_dim: int) -> None:
         self.node_hiddens = cast(torch.FloatTensor, torch.zeros((self.num_nodes(), node_hidden_dim,)))

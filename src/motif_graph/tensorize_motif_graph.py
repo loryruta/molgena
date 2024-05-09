@@ -99,13 +99,16 @@ def tensorize_mgraphs(mgraphs: List[nx.DiGraph],
     nodes. One list entry for every batch item. """
 
     # TODO use return_node_mappings
-    tensor_mgraphs = []
+    tensor_mgraph_list = []
     node_mappings = []
     node_offset = 0
     for mgraph in mgraphs:
         tensor_graph, cur_node_mappings = \
             tensorize_mgraph(mgraph, motif_vocab, return_node_mappings=True)
-        tensor_mgraphs.append(tensor_graph)
+        tensor_mgraph_list.append(tensor_graph)
         node_mappings.append({k: v + node_offset for k, v in cur_node_mappings.items()})
         node_offset += tensor_graph.num_nodes()
-    return batch_tensor_graphs(tensor_mgraphs), node_mappings
+
+    tensor_mgraphs = batch_tensor_graphs(tensor_mgraph_list)
+    tensor_mgraphs.validate()
+    return tensor_mgraphs, node_mappings

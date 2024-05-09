@@ -29,7 +29,7 @@ class SelectMotifMlp(nn.Module):
 
         self._mlp = create_mlp(
             self.mol_repr_dim + self.mol_repr_dim,
-            self.num_motifs,
+            self.num_motifs + 1,  # + 1 for the END motif
             params["hidden_layers"],
             nn.LeakyReLU()
         )

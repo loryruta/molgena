@@ -38,6 +38,8 @@ class MotifVocab:
         smiles, _ = canon_smiles(smiles)
         return self.df_smiles.loc[smiles] if smiles in self.df_smiles.index else None
 
+    # TODO utility function that given ID returns SMILES (no at_id(id)['smiles'])
+
     def end_motif_id(self) -> int:
         return len(self)
 

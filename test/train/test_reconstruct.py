@@ -3,7 +3,7 @@ import logging
 import pytest
 from mol_dataset import ZincDataset
 from motif_graph.cache import MgraphCache
-from train.annotations import Annotator
+from train.reconstruct.annotations import Annotator
 from utils.misc_utils import *
 
 

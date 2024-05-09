@@ -23,7 +23,7 @@ class MgraphCache:
             logging.warning(f"[MgraphCache] Cached mgraphs not found: {MGRAPHS_PKL}")
 
         with open(MGRAPHS_PKL, "rb") as file:
-            logging.info(f"[MgraphCache] Loading cached mgraphs at: {MGRAPHS_PKL}")
+            logging.info(f"[MgraphCache] Loading cached mgraphs at {MGRAPHS_PKL} (might take a while)")
             self._cached_mgraphs = pickle.load(file)
             logging.info(f"[MgraphCache] Loaded {len(self._cached_mgraphs)} mgraphs")
 

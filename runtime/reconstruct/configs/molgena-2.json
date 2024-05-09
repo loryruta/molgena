@@ -1,0 +1,61 @@
+{
+  "atom_features_dim": 5,
+  "bond_features_dim": 1,
+  "mol_repr_dim": 256,
+  "molgraph_node_hidden_dim": "{mol_repr_dim}",
+
+  "mgraph_node_features_dim": 64,
+  "mgraph_edge_features_dim": 11,
+  "mgraph_node_hidden_dim": 128,
+
+  "encode_mol": {
+    "num_steps": 20,
+    "node_features_dim": "{atom_features_dim}",
+    "edge_features_dim": "{bond_features_dim}",
+    "node_hidden_dim": "{molgraph_node_hidden_dim}",
+    "edge_hidden_dim": 64,
+    "W1": [256],
+    "W2": [256],
+    "W3": [256],
+    "U1": [256],
+    "U2": [256]
+  },
+  "encode_mgraph": {
+    "num_steps": 8,
+    "node_features_dim": "{mgraph_node_features_dim}",
+    "edge_features_dim": "{mgraph_edge_features_dim}",
+    "node_hidden_dim": "{mgraph_node_hidden_dim}",
+    "edge_hidden_dim": 96,
+    "W1": [128],
+    "W2": [128],
+    "W3": [128],
+    "U1": [128],
+    "U2": [128]
+  },
+  "select_motif_mlp": {
+    "mol_repr_dim": "{mol_repr_dim}",
+    "num_motifs": 4331,
+    "reconstruction_mode": true,
+    "hidden_layers": [512, 1024]
+  },
+  "select_attachment_clusters": {
+    "mgraph_node_hidden_dim": "{mgraph_node_hidden_dim}",
+    "motif_mrepr_dim": "{mgraph_node_features_dim}",
+    "hidden_layers": [512, 256, 128, 64]
+  },
+  "select_attachment_cluster1_atom": {
+    "molgraph_node_hidden_dim": "{molgraph_node_hidden_dim}",
+    "mol_repr_dim": "{mol_repr_dim}",
+    "hidden_layers": [512, 256, 128, 64]
+  },
+  "select_attachment_cluster2_atom": {
+    "molgraph_node_hidden_dim": "{molgraph_node_hidden_dim}",
+    "mol_repr_dim": "{mol_repr_dim}",
+    "hidden_layers": [512, 256, 128, 64]
+  },
+  "select_attachment_bond_type": {
+    "molgraph_node_hidden_dim": "{molgraph_node_hidden_dim}",
+    "mol_repr_dim": "{mol_repr_dim}",
+    "hidden_layers": [512, 256, 128, 64]
+  }
+}
