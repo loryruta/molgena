@@ -308,7 +308,7 @@ class MolgenaReconstructTask:
         checkpoint_path = path.join(self._checkpoints_dir, f"checkpoint-{self._epoch}.pt")
         torch.save({
             'epoch': self._epoch,
-            'model': self._molgena,
+            'model': self._molgena.state_dict(),
             'optimizer': self._optimizer.state_dict(),
             'lr_scheduler': self._lr_scheduler.state_dict(),
         }, checkpoint_path)
@@ -319,7 +319,7 @@ class MolgenaReconstructTask:
             f = path.join(self._checkpoints_dir, f)
             if f.endswith(".pt") and path.isfile(f) and not path.islink(f):
                 checkpoints.append(f)
-        checkpoints.sort(key=lambda f: path.getctime(f), reverse=True)  # Sort by creation time (descending)
+        checkpoints.sort(key=lambda f_: path.getctime(f_), reverse=True)  # Sort by creation time (descending)
 
         # Create a link to newly created checkpoint
         latest_filepath = path.join(self._checkpoints_dir, "checkpoint-latest.pt")
