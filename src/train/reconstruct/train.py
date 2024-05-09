@@ -19,13 +19,13 @@ from motif_vocab import MotifVocab
 from utils.misc_utils import *
 from utils.tensor_utils import *
 from model.molgena import Molgena
-from annotations import Annotator
+from annotations import Annotator, BatchedAnnotations
 
 
 class Predictions:
     """ A dataclass to gather predictions done for the reconstruction task. """
 
-    next_motif_ids: torch.LongTensor
+    next_motif_distr: torch.LongTensor
     """ A tensor of shape (B,) where every element is the next Motif ID to select. """
 
     attachment_cluster_mask: torch.FloatTensor
@@ -129,19 +129,16 @@ class MolgenaReconstructTask:
         mol_smiles_list = [mol_smiles for _, mol_smiles in raw_batch]
         return mol_smiles_list
 
-    def _train_step(self, batch_idx: int, batch):
+    def _run_inference(self, batch: List[str], annotations: BatchedAnnotations) -> Predictions:
         mol_smiles_list = batch
+        batch_size = len(batch)
 
-        # *** ANNOTATING ***
-
-        # Compute the annotations for the current training step (includes sampling the partial molecule)
-        annotations = self._annotator.create_batched_annotations(mol_smiles_list)
-
+        # Prepare data for inference
         mol_tensor_molgraphs = tensorize_smiles_list(mol_smiles_list)
         pmol_smiles_list = annotations.pmol_smiles_list
         pmol_tensor_molgraphs = tensorize_smiles_list(pmol_smiles_list)
 
-        # Prepare attachment information
+        # Prepare attachment data for inference
         attachment_pmol_mgraphs = annotations.attachment_pmol_mgraphs
         attachment_pmol_tensor_mgraphs, _ = tensorize_mgraphs(
             attachment_pmol_mgraphs, self._motif_vocab, return_node_mappings=False)
@@ -158,22 +155,18 @@ class MolgenaReconstructTask:
 
         # *** INFERENCE ***
 
-        self._molgena.train(True)
-
-        self._optimizer.zero_grad()
-
         pred = Predictions()
 
         # Encoding
-        mol_reprs = self._molgena.mod_encode_mol(mol_tensor_molgraphs, self._batch_size)
-        pmol_reprs = self._molgena.mod_encode_mol(pmol_tensor_molgraphs, self._batch_size)
+        mol_reprs = self._molgena.mod_encode_mol(mol_tensor_molgraphs, batch_size)
+        pmol_reprs = self._molgena.mod_encode_mol(pmol_tensor_molgraphs, batch_size)
         self._molgena.mod_encode_mgraph(attachment_pmol_tensor_mgraphs, num_attachments)  # Compute node_hiddens
         attachment_tmol_reprs = self._molgena.mod_encode_mol(attachment_tmol_tensor_molgraphs, num_attachments)
         cluster1_reprs = self._molgena.mod_encode_mol(cluster1_molgraphs, num_attachments)
         cluster2_reprs = self._molgena.mod_encode_mol(cluster2_molgraphs, num_attachments)
 
         # SelectMotifMlp
-        pred.next_motif_ids = self._molgena.mod_select_motif_mlp(pmol_reprs, mol_reprs)
+        pred.next_motif_distr = self._molgena.mod_select_motif_mlp(pmol_reprs, mol_reprs)  # (B, 4331)
 
         # TODO handle the case where all batch pmol are empty/full
 
@@ -193,9 +186,23 @@ class MolgenaReconstructTask:
         cluster1_atom_hiddens = cluster1_molgraphs.node_hiddens[cluster1_attachment_node_indices]
         cluster2_atom_hiddens = cluster2_molgraphs.node_hiddens[cluster2_attachment_node_indices]
         pred.attachment_bond_types = self._molgena.mod_select_attachment_bond_type(
-            cluster1_atom_hiddens,
-            cluster2_atom_hiddens,
-            attachment_tmol_reprs)
+            cluster1_atom_hiddens, cluster2_atom_hiddens, attachment_tmol_reprs)
+
+        return pred
+
+    def _train_step(self, batch_idx: int, batch: List[str]):
+        # *** ANNOTATE ***
+
+        annotations = self._annotator.create_batched_annotations(batch)
+
+        # *** INFERENCE ***
+
+        torch.set_grad_enabled(True)
+        self._molgena.train(True)
+
+        self._optimizer.zero_grad()
+
+        pred = self._run_inference(batch, annotations)
 
         # *** COMPUTE LOSS ***
 
@@ -205,7 +212,7 @@ class MolgenaReconstructTask:
         a32 = 1.
         a4 = 1.
 
-        l1 = a1 * F.cross_entropy(pred.next_motif_ids, annotations.next_motif_ids)
+        l1 = a1 * F.cross_entropy(pred.next_motif_distr, annotations.next_motif_ids)
         l2 = a2 * F.binary_cross_entropy(pred.attachment_cluster_mask, annotations.attachment_cluster_mask)
         l31 = a31 * F.binary_cross_entropy(pred.cluster1_attachment_mask, annotations.cluster1_attachment_mask)
         l32 = a32 * F.binary_cross_entropy(pred.cluster2_attachment_mask, annotations.cluster2_attachment_mask)
@@ -243,64 +250,50 @@ class MolgenaReconstructTask:
                       f"Total loss: {loss:.5f}, "
                       f"LR: {lr:.7f}")
 
-    def _test(self):
-        pass
-        # batch_size = self._test_batch_size
-        #
-        # test_smiles_list = self._test_set.df.sample(n=batch_size)['smiles'].tolist()
-        # motif_graphs = [construct_motif_graph(smiles, self._motif_vocab) for smiles in test_smiles_list]
-        # mol_graphs = tensorize_smiles_list(test_smiles_list)
-        #
-        # batch = (test_smiles_list, motif_graphs, mol_graphs)
-        #
-        # # labels = self._annotator.annotate(motif_graphs)
-        #
-        # # TODO don't use member vars (self._partial_mol_graphs, self._motif_mol_graphs, ...)
-        # self._partial_mol_graphs = tensorize_smiles_list(labels.partial_mol_smiles_list)
-        # motif_smiles_list = []
-        # for mid in labels.next_motif_ids:
-        #     motif_smiles = ""
-        #     if mid != self._end_motif_idx:
-        #         motif_smiles = self._motif_vocab.at_id(mid)['smiles']
-        #     motif_smiles_list.append(motif_smiles)
-        # self._motif_mol_graphs = tensorize_smiles_list(motif_smiles_list)
-        # self._tensorize_labels(labels)
-        #
-        # self._encode_mol.eval()
-        # self._select_motif_mlp.eval()
-        # self._select_mol_attachment.eval()
-        # self._classify_mol_bond.eval()
-        #
-        # with torch.no_grad():
-        #     pred = self._run_inference(batch)
-        #
-        #     m1_accuracy = \
-        #         (torch.argmax(pred.batched_motif_distr, dim=1) == labels.next_motif_labels).sum() / batch_size
-        #     m21_accuracy = \
-        #         iou(pred.batched_motif_candidates > 0.5, labels.batched_motif_candidates > 0.5)
-        #     m22_accuracy = \
-        #         iou(pred.batched_partial_mol_candidates > 0.5, labels.batched_partial_mol_candidates > 0.5)
-        #     m3_accuracy = 0.0
-        #     # m3_accuracy = (
-        #     #                       torch.argmax(pred.batched_bond_types, dim=1) == torch.argmax(
-        #     #                   labels.batched_bond_labels,
-        #     #                   dim=1)
-        #     #               ).sum() / batch_size
-        #
-        #     # Update tensorboard
-        #     self._writer.add_scalars("accuracy", {
-        #         "m1": m1_accuracy,
-        #         "m21": m21_accuracy,
-        #         "m22": m22_accuracy,
-        #         "m3": m3_accuracy
-        #     }, self._run_iteration)
-        #
-        #     # Log
-        #     logging.info(f"Test run; Accuracy: "
-        #                  f"SelectMotif: {m1_accuracy:.3f}, "
-        #                  f"SelectMolAttachment(M, z_m): {m21_accuracy:.3f}, "
-        #                  f"SelectMolAttachment(m, z_M): {m22_accuracy:.3f}, "
-        #                  f"ClassifyMolBond: {m3_accuracy:.3f}")
+    def _test_step(self):
+        batch_size = self._test_batch_size
+
+        batch = self._test_set.df.sample(n=batch_size)['smiles'].tolist()
+
+        # *** ANNOTATE ***
+
+        annotations = self._annotator.create_batched_annotations(batch)
+
+        # *** INFERENCE ***
+
+        torch.set_grad_enabled(True)
+        self._molgena.train(False)
+
+        pred = self._run_inference(batch, annotations)
+
+        # *** METRICS ***
+
+        pred_next_motif_ids = torch.argmax(pred.next_motif_distr, dim=1)
+        m1 = (pred_next_motif_ids == annotations.next_motif_ids).sum() / batch_size
+        m2 = iou(pred.attachment_cluster_mask > .5, annotations.attachment_cluster_mask > .5)
+        m31 = iou(pred.cluster1_attachment_mask > .5, annotations.cluster1_attachment_mask > .5)
+        m32 = iou(pred.cluster2_attachment_mask > .5, annotations.cluster2_attachment_mask > .5)
+        pred_attachment_bond_types = torch.argmax(pred.attachment_bond_types, dim=1)
+        m4 = (pred_attachment_bond_types == annotations.attachment_bond_types).sum() / batch_size
+
+        # *** LOGGING ***
+
+        # Update tensorboard
+        self._writer.add_scalars("accuracy", {
+            "m1": m1,
+            "m2": m2,
+            "m31": m31,
+            "m32": m32,
+            "m4": m4
+        }, self._run_iteration)
+
+        # Log on console
+        logging.info(f"Test run; Accuracy: "
+                     f"M1: {m1:.3f}, "
+                     f"M2: {m2:.3f}, "
+                     f"M31: {m31:.3f}, "
+                     f"M32: {m32:.3f}, "
+                     f"M4: {m4:.3f}")
 
     def _load_checkpoint(self, checkpoint_filepath: str):
         checkpoint = torch.load(checkpoint_filepath)
@@ -349,7 +342,7 @@ class MolgenaReconstructTask:
                 self._writer.flush()
                 logging.debug("Flushed tensorboard writes")
 
-            if self._run_iteration % 1000 == 0:
+            if self._run_iteration % 500 == 0:
                 self._save_checkpoint()
 
             if self._only_first_batch:
@@ -357,7 +350,7 @@ class MolgenaReconstructTask:
 
             # If "_only_first_batch", don't test
             if self._run_iteration % 100 == 0:
-                self._test()
+                self._test_step()
 
     def train(self):
         logging.info("Training started...")
