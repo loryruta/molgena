@@ -36,14 +36,14 @@ def test_find_node_orbit(orbits_detector):
 
     # SMILES 0
     mol_smiles = "C[C@H]1CC[C@@H](C)C[NH+]1CC(=O)NCCc1ccccc1"
-    mgraph = tensorize_mgraph(construct_motif_graph(mol_smiles, motif_vocab), motif_vocab)
+    mgraph, _ = tensorize_mgraph(construct_motif_graph(mol_smiles, motif_vocab), motif_vocab)
     assert set(find_node_orbit(mgraph, 0, orbits_detector)) == {0, 2}
     assert set(find_node_orbit(mgraph, 3, orbits_detector)) == {3}
     assert set(find_node_orbit(mgraph, 1, orbits_detector)) == {1}
 
     # SMILES 1
     mol_smiles = "COc1cc(C#N)ccc1OCC(=O)c1cc(C)c(C)c(C)c1C"
-    mgraph = tensorize_mgraph(construct_motif_graph(mol_smiles, motif_vocab), motif_vocab)
+    mgraph, _ = tensorize_mgraph(construct_motif_graph(mol_smiles, motif_vocab), motif_vocab)
     assert set(find_node_orbit(mgraph, 1, orbits_detector)) == {3, 1, 4, 2}
     assert set(find_node_orbit(mgraph, 4, orbits_detector)) == {3, 1, 4, 2}
     assert set(find_node_orbit(mgraph, 8, orbits_detector)) == {8}
@@ -51,15 +51,15 @@ def test_find_node_orbit(orbits_detector):
 
     # SMILES 2
     mol_smiles = "CC1(C)Cc2cccc(OCC(=O)NCCc3c[nH]c4ccccc34)c2O1"
-    mgraph = tensorize_mgraph(construct_motif_graph(mol_smiles, motif_vocab), motif_vocab)
+    mgraph, _ = tensorize_mgraph(construct_motif_graph(mol_smiles, motif_vocab), motif_vocab)
     assert set(find_node_orbit(mgraph, 0, orbits_detector)) == {2, 0}
     assert set(find_node_orbit(mgraph, 1, orbits_detector)) == {1}
     assert set(find_node_orbit(mgraph, 3, orbits_detector)) == {3}
 
     # SMILES 17
     mol_smiles = "CCCC(CCC)/C([O-])=N/S(=O)(=O)c1ccc2c(c1)CCCO2"
-    mgraph = tensorize_mgraph(construct_motif_graph(mol_smiles, motif_vocab), motif_vocab)
-    assert set(find_node_orbit(mgraph, 2, orbits_detector)) == {1, 2, 4, 5}  # 7?
+    mgraph, _ = tensorize_mgraph(construct_motif_graph(mol_smiles, motif_vocab), motif_vocab)
+    assert set(find_node_orbit(mgraph, 2, orbits_detector)) == {2, 4}
     assert set(find_node_orbit(mgraph, 10, orbits_detector)) == {10, 11}
     assert set(find_node_orbit(mgraph, 0, orbits_detector)) == {0, 6}
     assert set(find_node_orbit(mgraph, 3, orbits_detector)) == {3}

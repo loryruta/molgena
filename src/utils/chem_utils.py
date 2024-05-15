@@ -83,42 +83,6 @@ def extract_mol_fragment(mol: Chem.Mol, atom_indices: Set[int]) -> Chem.Mol:
     return frag_mol.GetMol()
 
 
-def attach_molecules(mol_a_smiles: str, mol_b_smiles: str, attachment: List[Tuple[int, int, Chem.BondType]]) -> str:
-    # TODO NOT TESTED YET!
-
-    mol_a = mol_from_smiles(mol_a_smiles)
-    mol_b = mol_from_smiles(mol_b_smiles)
-
-    new_mol = Chem.RWMol(mol_a)
-
-    mol_b_to_new_mol_indices = []  # Map mol_b atom indices to new_mol atom indices
-    for i, atom in enumerate(mol_b.GetAtoms()):
-        new_idx = new_mol.AddAtom(copy_atom(atom))
-        mol_b_to_new_mol_indices[i] = new_idx
-
-    for bond in mol_b.GetBonds():
-        new_mol.AddBond(
-            bond.GetBeginAtomIdx(),
-            bond.GetEndAtomIdx(),
-            bond.GetBondType()
-        )
-
-    for mol_a_atom_idx, mol_b_atom_idx, bond_type in attachment:
-        if bond_type != Chem.BondType.UNSPECIFIED:  # Ignore BondType.UNSPECIFIED (that is 0)
-            continue
-
-        # We should be making only SINGLE, DOUBLE, TRIPLE covalent bonds
-        assert bond_type in [Chem.BondType.SINGLE, Chem.BondType.DOUBLE, Chem.BondType.TRIPLE]
-
-        new_mol.AddBond(
-            new_mol.GetAtomWithIdx(mol_a_atom_idx),
-            new_mol.GetAtomWithIdx(mol_b_to_new_mol_indices[mol_b_atom_idx]),
-            bond_type
-        )
-
-    return Chem.MolToSmiles(new_mol, kekuleSmiles=True)
-
-
 def clear_atommap(mol_smiles: str) -> str:
     """ Given a SMILES, clears its atommap. """
     mol = Chem.MolFromSmiles(mol_smiles)
@@ -151,3 +115,39 @@ def set_atommap_to_indices(mol_smiles: str):
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(atom.GetIdx())
     return Chem.MolToSmiles(mol)
+
+
+def attach_molecules(mol1_smiles: str, mol1_ai: int, mol2_smiles: str, mol2_ai: int, bond_type: Chem.BondType) -> str:
+    mol1 = Chem.MolFromSmiles(mol1_smiles)
+
+    new_mol = Chem.RWMol(mol1)
+
+    mol2_dst_ai = len(new_mol.GetAtoms()) + mol2_ai
+
+    mol2 = Chem.MolFromSmiles(mol2_smiles)
+
+    # Add Motif atoms:
+    # new_mol = pmol atoms + motif atoms
+    for atom in mol2.GetAtoms():
+        new_idx = new_mol.AddAtom(copy_atom(atom))
+        atom.SetAtomMapNum(new_idx)
+
+    # Add Motif bonds
+    for bond in mol2.GetBonds():
+        new_mol.AddBond(
+            bond.GetBeginAtom().GetAtomMapNum(),
+            bond.GetEndAtom().GetAtomMapNum(),
+            bond.GetBondType()
+        )
+
+    # Add the attachment bond (only one!)
+    new_mol.AddBond(mol1_ai, mol2_dst_ai, bond_type)
+
+    return Chem.MolToSmiles(new_mol)
+
+
+def check_smiles_chemical_validity(smiles: str):
+    # Reference:
+    # https://github.com/rdkit/rdkit/issues/2430#issuecomment-487336884
+    mol = Chem.MolFromSmiles(smiles)
+    return mol is not None

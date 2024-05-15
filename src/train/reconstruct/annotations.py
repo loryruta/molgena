@@ -9,7 +9,7 @@ from mol_graph import tensorize_smiles
 from motif_graph.cache import MgraphCache
 from motif_graph.convert_motif_graph import convert_motif_graph_to_smiles
 from motif_graph.sample_motif_subgraph import sample_motif_subgraph
-from motif_graph.tensorize_motif_graph import tensorize_mgraph, tensorize_mgraphs
+from motif_graph.tensorize_motif_graph import tensorize_mgraphs
 from motif_vocab import MotifVocab
 from tensor_graph import *
 from utils.misc_utils import *
@@ -378,9 +378,7 @@ class Annotator:
             attachment_cluster_ids.append(annotation.attachment_cluster_id)
         assert len(attachment_pmol_mgraphs) == num_attachments
         assert len(attachment_cluster_ids) == num_attachments
-        attachment_pmol_tensor_mgraphs, node_mappings = tensorize_mgraphs(attachment_pmol_mgraphs,
-                                                                          self._motif_vocab,
-                                                                          return_node_mappings=True)
+        attachment_pmol_tensor_mgraphs, node_mappings = tensorize_mgraphs(attachment_pmol_mgraphs, self._motif_vocab)
         attachment_node_indices = []
         for attachment_cluster_id, mgraph_node_mappings in zip(attachment_cluster_ids, node_mappings):
             attachment_node_indices.append(mgraph_node_mappings[attachment_cluster_id])

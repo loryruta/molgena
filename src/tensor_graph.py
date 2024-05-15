@@ -23,6 +23,9 @@ class TensorGraph:
     def num_nodes(self):
         return len(self.node_features)
 
+    def is_empty(self):
+        return self.num_nodes() == 0
+
     def has_edges(self):
         return (self.edges is not None) and (self.edges.numel() > 0)
 
@@ -31,6 +34,12 @@ class TensorGraph:
 
     def is_batched(self):
         return self.batch_indices is not None
+
+    def make_batched(self):
+        if self.is_batched():
+            raise Exception("TensorGraph is already batched")
+        self.batch_indices = cast(torch.LongTensor, torch.zeros((self.num_nodes(),), dtype=torch.long))
+        return self
 
     def batch_size(self) -> int:
         """ Counts the number of unique batch indices.

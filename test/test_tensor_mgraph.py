@@ -55,26 +55,26 @@ def test_tensorize_mgraph():
 
     stopwatch_ = stopwatch_str()
 
-    tensor_motif_graph = tensorize_mgraph(motif_graph, motif_vocab)
+    tensor_mgraph, _ = tensorize_mgraph(motif_graph, motif_vocab)
 
     logging.info(f"Motif graph tensorized in {stopwatch_()}")
 
-    assert tensor_motif_graph.node_features.shape[0] == len(motif_graph.nodes)
-    assert tensor_motif_graph.edge_features.shape[0] == len(motif_graph.edges)
-    assert tensor_motif_graph.edges.shape == (2, len(motif_graph.edges))
+    assert tensor_mgraph.node_features.shape[0] == len(motif_graph.nodes)
+    assert tensor_mgraph.edge_features.shape[0] == len(motif_graph.edges)
+    assert tensor_mgraph.edges.shape == (2, len(motif_graph.edges))
 
 
 def test_fixed_mgraph_node_features():
     """ Tests that the algorithm used for hand-crafted node features for mgraph doesn't change. """
 
-    ref = torch.tensor([0.4205, -0.8754, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
-                        0.4073, -0.3797, 0.0000, 0.0000, -0.7762, 0.0000, 0.0000, 0.0000,
-                        0.0000, 0.0000, 0.4518, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
-                        -0.4193, 0.0000, 0.8507, 0.1668, -0.6179, 0.0000, -0.3659, 0.0000,
-                        0.2367, -0.1146, 0.0000, 0.0000, 0.9371, -0.7819, -0.1901, 0.0000,
-                        -1.1100, -0.5122, 1.4346, 0.0000, 0.0000, 0.9356, 0.0000, 0.0000,
-                        0.0000, -0.1100, 0.0000, -0.8135, 0.0000, 0.5159, 0.0000, 0.0000,
-                        0.0000, 0.6064, 0.0000, 0.0000, 0.0000, 0.9332, -0.1689, 0.0000], dtype=torch.float32)
+    ref = torch.tensor([0.3990, 0.5167, 0.0249, 0.9401, 0.9459, 0.7967, 0.4150, 0.8203, 0.2290,
+                        0.9096, 0.1183, 0.0752, 0.4092, 0.9601, 0.2093, 0.1940, 0.8909, 0.4387,
+                        0.3570, 0.5454, 0.8299, 0.2099, 0.7684, 0.4290, 0.2117, 0.6606, 0.1654,
+                        0.4250, 0.9927, 0.6964, 0.2472, 0.7028, 0.7494, 0.9303, 0.0494, 0.0750,
+                        0.7223, 0.9478, 0.3647, 0.2215, 0.7784, 0.6391, 0.2077, 0.7045, 0.9609,
+                        0.0594, 0.3358, 0.0616, 0.7030, 0.5642, 0.0102, 0.8551, 0.5187, 0.5017,
+                        0.1144, 0.2751, 0.5339, 0.8582, 0.8465, 0.1845, 0.6360, 0.6799, 0.4408,
+                        0.5010], dtype=torch.float32)
     assert (torch.round(create_mgraph_node_feature_vector(0), decimals=4) == ref).all()
 
 
@@ -111,7 +111,8 @@ def test_mgraph_automorphism(mgraph_encoder):
 
     for i, mol_smiles in dataset:
         mgraph = construct_motif_graph(mol_smiles, motif_vocab)
-        tensor_mgraph = batch_tensor_graphs([tensorize_mgraph(mgraph, motif_vocab)])
+        tensor_mgraph, _ = tensorize_mgraph(mgraph, motif_vocab)
+        tensor_mgraph.make_batched()
         with torch.no_grad():
             mgraph_encoder(tensor_mgraph, 1)
         assert tensor_mgraph.node_hiddens.shape[1] == 8
@@ -180,7 +181,7 @@ def test_visualize_mgraph_automorphisms(mgraph_encoder):
         plt.subplot(num_side, num_side, i + 1)
 
         mgraph = construct_motif_graph(mol_smiles, motif_vocab)
-        tensor_mgraph, node_mappings = tensorize_mgraph(mgraph, motif_vocab, return_node_mappings=True)
+        tensor_mgraph, node_mappings = tensorize_mgraph(mgraph, motif_vocab)
         tensor_mgraph = batch_tensor_graphs([tensor_mgraph])
         mgraph_encoder(tensor_mgraph, 1)
 

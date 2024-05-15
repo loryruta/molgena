@@ -22,16 +22,16 @@ class SelectAttachmentBondType(nn.Module):
     def forward(self,
                 cluster1_node_hiddens: torch.FloatTensor,
                 cluster2_node_hiddens: torch.FloatTensor,
-                attachment_tmol_reprs: torch.FloatTensor) -> torch.FloatTensor:
-        num_attachments = attachment_tmol_reprs.shape[0]
+                target_molreprs: torch.FloatTensor) -> torch.FloatTensor:
+        num_attachments = target_molreprs.shape[0]
         assert cluster1_node_hiddens.shape == (num_attachments, self._molgraph_node_hidden_dim)
         assert cluster2_node_hiddens.shape == (num_attachments, self._molgraph_node_hidden_dim)
-        assert attachment_tmol_reprs.shape == (num_attachments, self._mol_repr_dim)
+        assert target_molreprs.shape == (num_attachments, self._mol_repr_dim)
 
         mlp_input = torch.cat([
             cluster1_node_hiddens,
             cluster2_node_hiddens,
-            attachment_tmol_reprs
+            target_molreprs
         ], dim=1)
         mlp_output = self._mlp(mlp_input)
         assert mlp_output.shape == (num_attachments, 4)

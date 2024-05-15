@@ -11,15 +11,13 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from mol_dataset import ZincDataset
-from motif_graph import *
 from motif_graph.tensorize_motif_graph import create_mgraph_node_feature_vector, tensorize_mgraphs
-from motif_graph.cache import MgraphCache
 from mol_graph import *
 from motif_vocab import MotifVocab
-from utils.misc_utils import *
 from utils.tensor_utils import *
 from model.molgena import Molgena
 from annotations import Annotator, BatchedAnnotations
+from runtime_context import RuntimeContext, parse_runtime_context_from_cmdline
 
 
 class Predictions:
@@ -59,21 +57,8 @@ class Loss:
 
 
 class MolgenaReconstructTask:
-    def __init__(self, train_dir: str, config_filepath: str):
-        self._config_name = Path(config_filepath).stem
-        self._config = load_json_with_vars(config_filepath)
-
-        # Create ./runs/ directory
-        self._runs_dir = path.join(train_dir, f"runs-{self._config_name}")
-        if not path.exists(self._runs_dir):
-            os.mkdir(self._runs_dir)
-        logging.info(f"Runs directory: {self._runs_dir}")
-
-        # Create ./checkpoints/ directory
-        self._checkpoints_dir = path.join(train_dir, f"checkpoints-{self._config_name}")
-        if not path.exists(self._checkpoints_dir):
-            os.mkdir(self._checkpoints_dir)
-        logging.info(f"Checkpoints directory: {self._runs_dir}")
+    def __init__(self, context: RuntimeContext):
+        self._context = context
 
         # Load datasets
         self._training_set = ZincDataset.training_set()
@@ -98,7 +83,7 @@ class MolgenaReconstructTask:
         self._annotator = Annotator()
 
         # Create model
-        self._molgena = Molgena(self._config)
+        self._molgena = Molgena(context.config)
 
         # Create optimizer and LR scheduler
         num_parameters = sum([param.numel() for param in self._molgena.parameters()])
@@ -116,12 +101,11 @@ class MolgenaReconstructTask:
         self._run_iteration = 0
 
         # Create tensorboard writer
-        self._writer = SummaryWriter(log_dir=self._runs_dir)
+        self._writer = SummaryWriter(log_dir=context.runs_dir)
 
         # Load latest checkpoint if any
-        latest_checkpoint_path = path.join(self._checkpoints_dir, "checkpoint-latest.pt")
-        if path.exists(latest_checkpoint_path):
-            self._load_checkpoint(latest_checkpoint_path)
+        if path.exists(context.latest_checkpoint_file):
+            self._load_checkpoint(context.latest_checkpoint_file)
         else:
             logging.info("Checkpoint not found, starting fresh...")
 
@@ -140,8 +124,7 @@ class MolgenaReconstructTask:
 
         # Prepare attachment data for inference
         attachment_pmol_mgraphs = annotations.attachment_pmol_mgraphs
-        attachment_pmol_tensor_mgraphs, _ = tensorize_mgraphs(
-            attachment_pmol_mgraphs, self._motif_vocab, return_node_mappings=False)
+        attachment_pmol_tensor_mgraphs, _ = tensorize_mgraphs(attachment_pmol_mgraphs, self._motif_vocab)
         attachment_tmol_tensor_molgraphs = tensorize_smiles_list(annotations.attachment_tmol_smiles_list)
         num_attachments = annotations.num_attachments
         cluster2_mreprs = torch.stack(
@@ -183,6 +166,9 @@ class MolgenaReconstructTask:
             cluster2_molgraphs, cluster1_reprs, attachment_tmol_reprs)
 
         # SelectAttachmentBondType
+
+        # TODO for cluster1, it'd be more informative to use node_hiddens computed on the FULL partial molecular graph
+        #   now we're computing them on cluster1 subgraph
         cluster1_atom_hiddens = cluster1_molgraphs.node_hiddens[cluster1_attachment_node_indices]
         cluster2_atom_hiddens = cluster2_molgraphs.node_hiddens[cluster2_attachment_node_indices]
         pred.attachment_bond_types = self._molgena.mod_select_attachment_bond_type(
@@ -305,7 +291,7 @@ class MolgenaReconstructTask:
         logging.info(f"Checkpoint loaded: {checkpoint_filepath}")
 
     def _save_checkpoint(self):
-        checkpoint_path = path.join(self._checkpoints_dir, f"checkpoint-{self._epoch}.pt")
+        checkpoint_path = path.join(self._context.checkpoints_dir, f"checkpoint-{self._epoch}.pt")
         torch.save({
             'epoch': self._epoch,
             'model': self._molgena.state_dict(),
@@ -315,17 +301,16 @@ class MolgenaReconstructTask:
         logging.info(f"Saved checkpoint to: {checkpoint_path}")
 
         checkpoints = []
-        for f in os.listdir(self._checkpoints_dir):
-            f = path.join(self._checkpoints_dir, f)
+        for f in os.listdir(self._context.checkpoints_dir):
+            f = path.join(self._context.checkpoints_dir, f)
             if f.endswith(".pt") and path.isfile(f) and not path.islink(f):
                 checkpoints.append(f)
         checkpoints.sort(key=lambda f_: path.getctime(f_), reverse=True)  # Sort by creation time (descending)
 
         # Create a link to newly created checkpoint
-        latest_filepath = path.join(self._checkpoints_dir, "checkpoint-latest.pt")
-        if path.exists(latest_filepath):
-            os.unlink(latest_filepath)
-        os.symlink(checkpoints[0], latest_filepath)
+        if path.exists(self._context.latest_checkpoint_file):
+            os.unlink(self._context.latest_checkpoint_file)
+        os.symlink(checkpoints[0], self._context.latest_checkpoint_file)
 
         # Remove last checkpoint if max is exceeded
         if len(checkpoints) > 10:
@@ -363,30 +348,8 @@ class MolgenaReconstructTask:
 
 
 def _main():
-    from argparse import ArgumentParser
-    from pathlib import Path
-
-    parser = ArgumentParser()
-    parser.add_argument("--train-dir", type=Path, required=True)
-    parser.add_argument("--config-file", type=Path, required=True)
-
-    args = parser.parse_args()
-
-    if not path.isdir(args.train_dir):
-        print(f"Invalid train directory: {args.train_dir}")
-        exit(1)
-
-    if not path.isfile(args.config_file):
-        print(f"Invalid config file: {args.config_file}")
-        exit(1)
-
-    logging.info(f"Training directory: {args.train_dir}")
-    logging.info(f"Loading config file: {args.config_file}")
-
-    trainer = MolgenaReconstructTask(
-        train_dir=args.train_dir,
-        config_filepath=args.config_file
-    )
+    context = parse_runtime_context_from_cmdline()
+    trainer = MolgenaReconstructTask(context)
     trainer.train()
 
 

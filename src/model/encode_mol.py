@@ -25,6 +25,11 @@ class EncodeMol(nn.Module):
             representation equal to zero.
         """
 
+        mol_repr = torch.zeros((batch_size, self._node_hidden_dim,))
+
+        if mol_graph.is_empty():  # We don't have any node! Just return zero representations
+            return mol_repr
+
         mol_graph.create_hiddens(self._node_hidden_dim, self._edge_hidden_dim)
         self._encode_mol_mpn(mol_graph)
 
@@ -32,6 +37,5 @@ class EncodeMol(nn.Module):
         assert batch_indices.min().item() >= 0
         assert batch_indices.max().item() < batch_size
 
-        mol_repr = torch.zeros((batch_size, self._node_hidden_dim,))
         mol_repr = mol_repr.index_reduce(0, batch_indices, mol_graph.node_hiddens, reduce='mean')  # (B, NH,)
         return mol_repr

@@ -1,7 +1,5 @@
 from common import *
-from random import Random
-import torch
-from rdkit import Chem
+from bidict import bidict
 import networkx as nx
 from motif_vocab import MotifVocab
 from mol_graph import *
@@ -21,9 +19,7 @@ def create_mgraph_node_feature_vector(motif_id: int) -> torch.Tensor:
     return torch.rand((feature_vector_dim,), generator=generator)
 
 
-def tensorize_mgraph(mgraph: nx.DiGraph,
-                     motif_vocab: MotifVocab,
-                     return_node_mappings: bool = False) -> Union[TensorGraph, Tuple[TensorGraph, Dict[int, int]]]:
+def tensorize_mgraph(mgraph: nx.DiGraph, motif_vocab: MotifVocab) -> Tuple[TensorGraph, bidict]:
     tensor_graph = TensorGraph()
 
     tensor_graph.node_features = torch.zeros((len(mgraph.nodes),))
@@ -37,7 +33,7 @@ def tensorize_mgraph(mgraph: nx.DiGraph,
     # Maps:
     #   cid -> node_idx
     # To which (sequential) node index was mapped the cid
-    node_mappings: Dict[int, int] = {}
+    node_mappings: bidict = bidict({})
 
     # Create node features
     for cid in mgraph.nodes:
@@ -85,16 +81,10 @@ def tensorize_mgraph(mgraph: nx.DiGraph,
         tensor_graph.edges = torch.tensor(edges, dtype=torch.long).t()
 
     tensor_graph.validate()
-
-    if return_node_mappings:
-        return tensor_graph, node_mappings
-    else:
-        return tensor_graph
+    return tensor_graph, node_mappings
 
 
-def tensorize_mgraphs(mgraphs: List[nx.DiGraph],
-                      motif_vocab: MotifVocab,
-                      return_node_mappings: bool = False) -> Tuple[TensorGraph, List[Dict[int, int]]]:
+def tensorize_mgraphs(mgraphs: List[nx.DiGraph], motif_vocab: MotifVocab) -> Tuple[TensorGraph, List[bidict]]:
     """ Tensorizes every given mgraph and returns a batched TensorGraph and a list of node mappings pointing to batched
     nodes. One list entry for every batch item. """
 
@@ -103,10 +93,9 @@ def tensorize_mgraphs(mgraphs: List[nx.DiGraph],
     node_mappings = []
     node_offset = 0
     for mgraph in mgraphs:
-        tensor_graph, cur_node_mappings = \
-            tensorize_mgraph(mgraph, motif_vocab, return_node_mappings=True)
+        tensor_graph, cur_node_mappings = tensorize_mgraph(mgraph, motif_vocab)
         tensor_mgraph_list.append(tensor_graph)
-        node_mappings.append({k: v + node_offset for k, v in cur_node_mappings.items()})
+        node_mappings.append(bidict({k: v + node_offset for k, v in cur_node_mappings.items()}))
         node_offset += tensor_graph.num_nodes()
 
     tensor_mgraphs = batch_tensor_graphs(tensor_mgraph_list)

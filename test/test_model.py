@@ -8,7 +8,7 @@ from model.encode_mol import EncodeMol
 from model.select_motif_mlp import SelectMotifMlp
 from model.select_mol_attachment import SelectMolAttachment
 from model.classify_mol_bond import ClassifyMolBond
-from test_utils import *
+from testutils import *
 from utils.tensor_utils import *
 
 
