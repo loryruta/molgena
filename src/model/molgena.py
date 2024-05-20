@@ -26,6 +26,8 @@ class Molgena(nn.Module):
     def __init__(self, params: Dict[str, Any]):
         super().__init__()
 
+        self.molrepr_dim = params['mol_repr_dim']
+
         self.mod_encode_mol = EncodeMol(params['encode_mol'])
         self.mod_encode_mgraph = EncodeMol(params['encode_mgraph'])  # Use EncodeMol to compute node_hiddens for mgraphs
         self.mod_select_motif_mlp = SelectMotifMlp(params['select_motif_mlp'])
@@ -33,6 +35,16 @@ class Molgena(nn.Module):
         self.mod_select_attachment_cluster1_atom = SelectAttachmentAtom(params['select_attachment_cluster1_atom'])
         self.mod_select_attachment_cluster2_atom = SelectAttachmentAtom(params['select_attachment_cluster2_atom'])
         self.mod_select_attachment_bond_type = SelectAttachmentBondType(params['select_attachment_bond_type'])
+
+    def describe(self, level=logging.DEBUG):
+        logging.log(level, f"Molgena model ({num_model_params(self)} params):")
+        logging.log(level, f"  EncodeMol {num_model_params(self.mod_encode_mol)} params")
+        logging.log(level, f"  EncodeMGraph {num_model_params(self.mod_encode_mgraph)} params")
+        logging.log(level, f"  SelectMotifMlp {num_model_params(self.mod_select_motif_mlp)} params")
+        logging.log(level, f"  SelectAttachmentCluster {num_model_params(self.mod_select_attachment_clusters)} params")
+        logging.log(level, f"  SelectAttachmentCluster1Atom {num_model_params(self.mod_select_attachment_cluster1_atom)} params")
+        logging.log(level, f"  SelectAttachmentCluster2Atom {num_model_params(self.mod_select_attachment_cluster2_atom)} params")
+        logging.log(level, f"  SelectAttachmentBondType {num_model_params(self.mod_select_attachment_bond_type)} params")
 
     def forward(self):
         raise NotImplementedError("Molgena forward() is invalid, you may inference individual modules")
@@ -68,54 +80,60 @@ class Molgena(nn.Module):
         assert motif_mrepr.ndim == 1
 
         next_cluster_distr = self.mod_select_attachment_clusters(pmol_mgraph, motif_mrepr.unsqueeze(dim=0))
+        next_cluster_distr = torch.max(next_cluster_distr, torch.tensor([1e-10]))  # Hack to allow probability normalization
         next_cluster_idx = dist.Categorical(probs=next_cluster_distr).sample().item()
         return next_cluster_idx
 
     def select_attachment_cluster1_atom(self,
-                                        cluster1_molgraph: TensorGraph,
+                                        cluster1_node_hiddens: torch.FloatTensor,
                                         cluster2_molrepr: torch.Tensor,
                                         target_molrepr: torch.Tensor) -> int:
         # Input validation
-        self._check_single_batch_tgraph(cluster1_molgraph)
+        assert cluster1_node_hiddens.ndim == 2
         assert cluster2_molrepr.ndim == 1
         assert target_molrepr.ndim == 1
-        bond_atom_distr = self.mod_select_attachment_cluster1_atom(cluster1_molgraph,
-                                                                   cluster2_molrepr.unsqueeze(dim=0),
-                                                                   target_molrepr.unsqueeze(dim=0))
-        bond_atom_idx = dist.Categorical(probs=bond_atom_distr).sample().item()
+
+        cluster1_num_nodes = cluster1_node_hiddens.shape[0]
+        cluster1_batch_indices = torch.zeros((cluster1_num_nodes,), dtype=torch.long)
+        atom_distr = self.mod_select_attachment_cluster1_atom(cluster1_node_hiddens,
+                                                              cluster1_batch_indices,
+                                                              cluster2_molrepr.unsqueeze(dim=0),
+                                                              target_molrepr.unsqueeze(dim=0))
+        atom_distr = torch.max(atom_distr, torch.tensor([1e-10]))  # Hack to allow probability normalization
+        bond_atom_idx = dist.Categorical(probs=atom_distr).sample().item()
         return bond_atom_idx
 
     def select_attachment_cluster2_atom(self,
-                                        cluster2_molgraph: TensorGraph,
+                                        cluster2_node_hiddens: torch.FloatTensor,
                                         cluster1_molrepr: torch.Tensor,
                                         target_molrepr: torch.Tensor) -> int:
         # Input validation
-        self._check_single_batch_tgraph(cluster2_molgraph)
+        assert cluster2_node_hiddens.ndim == 2
         assert cluster1_molrepr.ndim == 1
         assert target_molrepr.ndim == 1
-        bond_atom_distr = self.mod_select_attachment_cluster2_atom(cluster2_molgraph,
-                                                                   cluster1_molrepr.unsqueeze(dim=0),
-                                                                   target_molrepr.unsqueeze(dim=0))
-        bond_atom_idx = dist.Categorical(probs=bond_atom_distr).sample().item()
+
+        cluster2_num_nodes = cluster2_node_hiddens.shape[0]
+        cluster2_batch_indices = torch.zeros((cluster2_num_nodes,), dtype=torch.long)
+        atom_distr = self.mod_select_attachment_cluster2_atom(cluster2_node_hiddens,
+                                                              cluster2_batch_indices,
+                                                              cluster1_molrepr.unsqueeze(dim=0),
+                                                              target_molrepr.unsqueeze(dim=0))
+        atom_distr = torch.max(atom_distr, torch.tensor([1e-10]))  # Hack to allow probability normalization
+        bond_atom_idx = dist.Categorical(probs=atom_distr).sample().item()
         return bond_atom_idx
 
     def select_attachment_bond_type(self,
-                                    cluster1_molgraph: TensorGraph,
-                                    cluster1_ai: int,
-                                    cluster2_molgraph: TensorGraph,
-                                    cluster2_ai: int,
+                                    cluster1_node_hidden: torch.FloatTensor,
+                                    cluster2_node_hidden: torch.FloatTensor,
                                     target_molrepr: torch.Tensor
                                     ) -> Chem.BondType:
         # Input validation
-        self._check_single_batch_tgraph(cluster1_molgraph)
-        assert 0 <= cluster1_ai < cluster1_molgraph.num_nodes()
-        assert cluster1_molgraph.node_hiddens is not None
-        self._check_single_batch_tgraph(cluster2_molgraph)
-        assert 0 <= cluster2_ai < cluster2_molgraph.num_nodes()
-        assert cluster2_molgraph.node_hiddens is not None
+        assert cluster1_node_hidden.ndim == 1
+        assert cluster2_node_hidden.ndim == 1
+        assert target_molrepr.ndim == 1
 
-        cluster1_node_hiddens = cluster1_molgraph.node_hiddens[cluster1_ai].unsqueeze(dim=0)
-        cluster2_node_hiddens = cluster2_molgraph.node_hiddens[cluster2_ai].unsqueeze(dim=0)
+        cluster1_node_hiddens = cluster1_node_hidden.unsqueeze(dim=0)
+        cluster2_node_hiddens = cluster2_node_hidden.unsqueeze(dim=0)
         target_molrepr = target_molrepr.unsqueeze(dim=0)
 
         bond_type_distr = self.mod_select_attachment_bond_type(cluster1_node_hiddens,

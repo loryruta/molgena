@@ -1,11 +1,12 @@
 from common import *
+from bidict import bidict
 import logging
 from random import Random
 from typing import *
 import networkx as nx
 from rdkit import Chem
 import torch
-from mol_graph import tensorize_smiles
+from mol_graph import tensorize_smiles, tensorize_smiles_list
 from motif_graph.cache import MgraphCache
 from motif_graph.convert_motif_graph import convert_motif_graph_to_smiles
 from motif_graph.sample_motif_subgraph import sample_motif_subgraph
@@ -26,8 +27,14 @@ class Annotations:
     mol_mgraph: nx.DiGraph
     """ The target molecule's mgraph. """
 
-    partial_mol_smiles: str  # TODO rename to pmol_smiles (shorter)
+    pmol_smiles: str
     """ The partial molecule SMILES. """
+
+    pmol_num_atoms: int
+    """ Number of atoms of the partial molecule. """
+
+    pmol_cluster_atom_mappings: bidict
+    """ A mapping `(cid, motif ai) -> node index`, as it's returned by convert_motif_graph_to_smiles(). """
 
     mgraph_subgraph_indices: List[int]
     """ The node indices of the initial molecule's mgraph, that makes the partial molecule. """
@@ -50,14 +57,14 @@ class Annotations:
     next_motif_id: int
     """ The next Motif ID to select. """
 
-    attachment_cluster_id: int
+    attachment_cluster_id: int  # TODO rename to cluster1_cid
     """ The cluster ID for the partial molecule to form the attachment with. 
     By analyzing the dataset, it was found that most of the times the Motif is attached to the partial molecule with
     *only one* cluster!
     """
 
-    cluster1_motif_id: int
-    """ The Motif ID for cluster1. """
+    cluster1_node_indices: List[int]
+    """ Indices of pmol nodes that belong to cluster1. """
 
     cluster1_motif_ai: int
     """ The atom selected for bond of cluster1 (partial molecule). A motif -relative index. """
@@ -71,7 +78,7 @@ class Annotations:
     def _validate_empty_pmol(self):
         assert self.mol_smiles
         assert self.mol_mgraph
-        assert self.partial_mol_smiles == ""
+        assert self.pmol_smiles == ""
         assert len(self.mgraph_subgraph_indices) == 0
         assert hasattr(self, "pmol_mgraph")
         assert nx.is_empty(self.pmol_mgraph)
@@ -81,7 +88,7 @@ class Annotations:
         assert self.next_cluster_id in self.mol_mgraph.nodes
         assert hasattr(self, "next_motif_id")  # TODO != END token
         assert not hasattr(self, "attachment_cluster_id")
-        assert not hasattr(self, "cluster1_motif_id")
+        assert not hasattr(self, "cluster1_node_indices")
         assert not hasattr(self, "cluster1_motif_ai")
         assert not hasattr(self, "cluster2_motif_ai")
         assert not hasattr(self, "bond_type")
@@ -89,7 +96,7 @@ class Annotations:
     def _validate_full_pmol(self):
         assert self.mol_smiles
         assert self.mol_mgraph
-        # TODO assert self.partial_mol_smiles == self.mol_smiles
+        # TODO assert self.pmol_smiles == self.mol_smiles
         assert len(self.mgraph_subgraph_indices) == len(self.mol_mgraph.nodes)
         assert hasattr(self, "pmol_mgraph")
         assert len(self.pmol_mgraph.nodes) == len(self.mol_mgraph.nodes)
@@ -99,7 +106,7 @@ class Annotations:
         assert not hasattr(self, "next_cluster_id")
         assert self.next_motif_id > 0  # TODO == END token
         assert not hasattr(self, "attachment_cluster_id")
-        assert not hasattr(self, "cluster1_motif_id")
+        assert not hasattr(self, "cluster1_node_indices")
         assert not hasattr(self, "cluster1_motif_ai")
         assert not hasattr(self, "cluster2_motif_ai")
         assert not hasattr(self, "bond_type")
@@ -107,7 +114,7 @@ class Annotations:
     def _validate_pmol(self):
         assert self.mol_smiles
         assert self.mol_mgraph
-        assert self.partial_mol_smiles
+        assert self.pmol_smiles
         assert len(self.mgraph_subgraph_indices) > 0
         assert len(self.mgraph_subgraph_indices) < len(self.mol_mgraph.nodes)
         assert hasattr(self, "pmol_mgraph")
@@ -119,8 +126,8 @@ class Annotations:
         assert self.next_cluster_id not in self.mgraph_subgraph_indices
         assert self.mol_mgraph.nodes[self.next_cluster_id]['motif_id'] == self.next_motif_id
         assert hasattr(self, "attachment_cluster_id")
+        assert hasattr(self, "cluster1_node_indices")
         assert self.attachment_cluster_id in self.pmol_mgraph.nodes
-        assert hasattr(self, "cluster1_motif_id")
         assert hasattr(self, "cluster1_motif_ai")
         assert hasattr(self, "cluster2_motif_ai")
         assert hasattr(self, "bond_type")
@@ -159,14 +166,14 @@ class BatchedAnnotations:
     num_attachments: int
     """ Number of attachments to form (excluding empty/full molecules). """
 
-    cluster1_motif_ids: List[int]
-    """ Motif IDs of cluster1 for all the attachments. """
-
     cluster2_motif_ids: List[int]
     """ Motif IDs of cluster2 for all the attachments. """
 
     cluster1_attachment_node_indices: List[int]
+    """ Cluster1 node indices to form the attachment with; one per attachment pmol. Attachment pmol indices. """
+
     cluster2_attachment_node_indices: List[int]
+    """ Cluster2 node indices to form the attachment with; one per next motif. Motif node indices. """
 
     # *** TENSORS ***
 
@@ -174,18 +181,22 @@ class BatchedAnnotations:
     next_motif_ids: torch.LongTensor  # (B,)
     """ A tensor of shape (B,) where the i-th element is the next Motif ID for the i-th molecule. """
 
-    # SelectAttachmentClusters
+    # SelectAttachmentCluster
     attachment_cluster_mask: torch.LongTensor
     """ A tensor of shape (B,) where the i-th element is the attachment cluster ID of the i-th partial molecule. """
 
+    cluster1_node_indices: torch.LongTensor
+    """ Indices of attachment_pmol atoms that belong to cluster1. """
+
     # SelectAttachmentAtom(cluster1)
     cluster1_attachment_mask: torch.FloatTensor
-    """ A tensor over batched cluster1 atoms, where the i-th element is {0, 1} if selected for attachment.
-     Multiple elements could be 1 as a result of automorphisms. """
+    """ A tensor over batched cluster1 atoms (cluster1_node_indices), where i-th element is 1 if should be selected for
+    attachment.
+    Multiple elements could be 1 as a result of automorphisms. """
 
     # SelectAttachmentAtom(cluster2)
     cluster2_attachment_mask: torch.FloatTensor
-    """ A tensor over batched cluster2 atoms, where the i-th element is {0, 1} if selected for attachment.
+    """ A tensor over batched cluster2 atoms, where the i-th element is 1 if should be selected for attachment.
      Multiple elements could be 1 as a result of automorphisms. """
 
     # SelectAttachmentBondType
@@ -196,10 +207,19 @@ class BatchedAnnotations:
         assert len(self.attachment_pmol_smiles_list) == self.num_attachments
         assert len(self.attachment_tmol_smiles_list) == self.num_attachments
         assert len(self.pmol_smiles_list) >= self.num_attachments
-        assert len(self.cluster1_motif_ids) == self.num_attachments
         assert len(self.cluster2_motif_ids) == self.num_attachments
         assert self.next_motif_ids.shape == (len(self.pmol_smiles_list),)
-        # attachment_cluster_mask TODO could be not defined if no attachment pmol in the batch
+        if self.num_attachments > 0:
+            cluster1_num_nodes = self.cluster1_node_indices.shape[0]
+            assert self.cluster1_node_indices.shape == (cluster1_num_nodes,)
+            if self.cluster1_attachment_mask.shape != (cluster1_num_nodes,):
+                assert self.cluster1_attachment_mask.shape == (cluster1_num_nodes,)
+        else:
+            assert not hasattr(self, "attachment_cluster_mask")
+            assert not hasattr(self, "cluster1_node_indices")
+            assert not hasattr(self, "cluster1_attachment_mask")
+            assert not hasattr(self, "cluster2_attachment_mask")
+            assert not hasattr(self, "attachment_bond_types")
         # cluster1_attachment_mask
         # cluster2_attachment_mask
         # attachment_bond_types
@@ -254,19 +274,21 @@ class Annotator:
         mgraph = MgraphCache.get_or_construct_mgraph(mol_smiles)
         mgraph_subgraph_indices = sample_motif_subgraph(mgraph, seed=self._random.randint(0, (1 << 31) - 1))
 
-        partial_mol_smiles = ""
+        pmol_smiles = ""
         pmol_mgraph = mgraph.subgraph(mgraph_subgraph_indices)  # Could be also an empty graph
         assert len(pmol_mgraph.nodes) == len(mgraph_subgraph_indices)
 
         if len(mgraph_subgraph_indices) > 0:
-            partial_mol_smiles = convert_motif_graph_to_smiles(pmol_mgraph, self._motif_vocab)[0]
+            pmol_smiles, cluster_atom_mappings = convert_motif_graph_to_smiles(pmol_mgraph, self._motif_vocab)
+            annotations.pmol_cluster_atom_mappings = cluster_atom_mappings
 
         is_empty = len(mgraph_subgraph_indices) == 0
         is_full = len(mgraph_subgraph_indices) == len(mgraph.nodes)
 
         # Store annotations
         annotations.mol_mgraph = mgraph
-        annotations.partial_mol_smiles = partial_mol_smiles
+        annotations.pmol_smiles = pmol_smiles
+        annotations.pmol_num_atoms = len(Chem.MolFromSmiles(pmol_smiles).GetAtoms())  # Inefficient
         annotations.mgraph_subgraph_indices = mgraph_subgraph_indices
         annotations.pmol_mgraph = pmol_mgraph
         annotations.is_empty = is_empty
@@ -304,9 +326,8 @@ class Annotator:
         annotations.next_motif_id = mgraph.nodes[annotations.next_cluster_id]['motif_id']
 
     def _annotate_attachment_cluster_id(self, annotations: Annotations):
-        # If the partial molecule is empty or full, there are no attachment clusters to select
-        if annotations.is_empty or annotations.is_full:
-            return
+        if not annotations.is_partial:
+            return  # No attachment cluster
 
         next_cluster_id = annotations.next_cluster_id
         mol_mgraph = annotations.mol_mgraph
@@ -326,11 +347,21 @@ class Annotator:
 
         # Store annotations
         annotations.attachment_cluster_id = cluster_id
-        annotations.cluster1_motif_id = mol_mgraph.nodes[cluster_id]['motif_id']
+
+    def _annotate_cluster1_node_indices(self, annotations: Annotations):
+        if not annotations.is_partial:
+            return  # No attachment cluster
+        cluster1_node_indices = []
+        for node_idx, (cid, motif_ai) in annotations.pmol_cluster_atom_mappings.inverse.items():
+            # node index -> (cid, motif ai)
+            if cid == annotations.attachment_cluster_id:
+                cluster1_node_indices.append(node_idx)
+        assert len(cluster1_node_indices) > 0
+        annotations.cluster1_node_indices = sorted(cluster1_node_indices)
 
     def _annotate_cluster1_cluster2_bond(self, annotations: Annotations):
-        if not hasattr(annotations, 'attachment_cluster_id'):
-            return  # No attachment clusters were selected; meaning partial molecule is either empty or full
+        if not annotations.is_partial:
+            return  # No attachment cluster
 
         mol_mgraph = annotations.mol_mgraph
         cid1 = annotations.attachment_cluster_id
@@ -352,8 +383,11 @@ class Annotator:
         self._annotate_partial_mol(annotations)
         self._annotate_next_motif_id(annotations)
         self._annotate_attachment_cluster_id(annotations)
+        self._annotate_cluster1_node_indices(annotations)
         self._annotate_cluster1_cluster2_bond(annotations)
-        annotations.validate()
+
+        # annotations.validate()
+
         return annotations
 
     def _tensorize_next_motif_ids(self,
@@ -362,13 +396,12 @@ class Annotator:
         next_motif_ids = [annotation.next_motif_id for annotation in annotations]
         batched_annotations.next_motif_ids = torch.tensor(next_motif_ids, dtype=torch.long)
 
-    def _tensorize_attachment_clusters(self,
-                                       annotations: List[Annotations],
-                                       batched_annotations: BatchedAnnotations):
+    def _tensorize_attachment_cluster(self,
+                                      annotations: List[Annotations],
+                                      batched_annotations: BatchedAnnotations):
         num_attachments = batched_annotations.num_attachments
         if num_attachments == 0:
             return
-
         attachment_pmol_mgraphs = []
         attachment_cluster_ids = []
         for annotation in annotations:
@@ -393,37 +426,53 @@ class Annotator:
 
         batched_annotations.attachment_cluster_mask = attachment_cluster_mask
 
-    def _tensorize_cluster1_attachment_atoms(self,
-                                             annotations: List[Annotations],
-                                             batched_annotations: BatchedAnnotations):
-        cluster1_tensor_molgraphs = []
-        cluster1_attachment_node_indices = []
+    def _tensorize_cluster1_node_indices(self,
+                                         annotations: List[Annotations],
+                                         batched_annotations: BatchedAnnotations):
         node_offset = 0
+        cluster1_node_indices = []  # Batch-wise indices of cluster1 in pmol
         for annotation in annotations:
             if not annotation.is_partial:
                 continue
-            cluster1_mid = annotation.cluster1_motif_id
-            cluster1_smiles = self._motif_vocab.at_id(cluster1_mid)['smiles']
-            cluster1_tensor_molgraph = tensorize_smiles(cluster1_smiles)
-            cluster1_tensor_molgraphs.append(cluster1_tensor_molgraph)
-            cluster1_attachment_node_indices.append(annotation.cluster1_motif_ai + node_offset)
-            node_offset += cluster1_tensor_molgraph.num_nodes()
-        if len(cluster1_tensor_molgraphs) == 0:
+            cluster1_node_indices.extend([node_offset + node_idx for node_idx in annotation.cluster1_node_indices])
+            node_offset += annotation.pmol_num_atoms
+        if len(cluster1_node_indices) == 0:
+            return  # Batch pmol(s) are all empty/full
+        batched_annotations.cluster1_node_indices = torch.tensor(cluster1_node_indices, dtype=torch.long)
+
+    def _tensorize_cluster1_attachment_atoms(self,
+                                             annotations: List[Annotations],
+                                             batched_annotations: BatchedAnnotations):
+        cluster1_attachment_node_indices = []
+        pmol_offset = 0
+        for annotation in annotations:
+            if not annotation.is_partial:
+                continue
+            attachment_cid = annotation.attachment_cluster_id
+            attachment_motif_ai = annotation.cluster1_motif_ai
+            attachment_node_idx = annotation.pmol_cluster_atom_mappings[attachment_cid, attachment_motif_ai]
+            cluster1_attachment_node_indices.append(pmol_offset + attachment_node_idx)
+            pmol_offset += annotation.pmol_num_atoms
+        if len(cluster1_attachment_node_indices) == 0:
             return  # All batch molecules are empty/full
-        batch_size = len(cluster1_tensor_molgraphs)
 
-        # Batch together tensorized molgraphs
-        cluster1_tensor_molgraphs = batch_tensor_graphs(cluster1_tensor_molgraphs)
+        # Tensorize together pmol(s) for which we compute an attachment for
+        pmol_smiles_list = batched_annotations.attachment_pmol_smiles_list
+        num_attachments = batched_annotations.num_attachments
+        pmol_tensor_molgraphs = tensorize_smiles_list(pmol_smiles_list)
 
-        # Compute node_hiddens for all molgraphs (faster), and find node orbits
+        # Compute node_hiddens for all pmol tensor graphs (faster), then find node orbits
         with torch.no_grad():
-            self._molgraph_node_orbit_detector(cluster1_tensor_molgraphs, batch_size)
-        same_orbit_mask = compute_node_orbit_mask_with_precomputed_node_hiddens(
-            cluster1_tensor_molgraphs, cluster1_attachment_node_indices)
-        assert same_orbit_mask.shape == (cluster1_tensor_molgraphs.num_nodes(),)
+            self._molgraph_node_orbit_detector(pmol_tensor_molgraphs, num_attachments)
 
-        cluster1_attachment_mask = torch.zeros((cluster1_tensor_molgraphs.num_nodes(),), dtype=torch.float32)
-        cluster1_attachment_mask[same_orbit_mask] = 1.
+        # Search node orbits; i.e. nodes similar to attachment cluster's nodes
+        same_orbit_mask = compute_node_orbit_mask_with_precomputed_node_hiddens(
+            pmol_tensor_molgraphs, cluster1_attachment_node_indices)
+        assert same_orbit_mask.shape == (pmol_tensor_molgraphs.num_nodes(),)
+
+        # Index the mask only to cluster1 nodes
+        cluster1_attachment_mask = same_orbit_mask[batched_annotations.cluster1_node_indices]
+        cluster1_attachment_mask = cluster1_attachment_mask.to(dtype=torch.float32)
 
         batched_annotations.cluster1_attachment_mask = cluster1_attachment_mask
         batched_annotations.cluster1_attachment_node_indices = cluster1_attachment_node_indices
@@ -485,29 +534,28 @@ class Annotator:
         batched_annotations.attachment_pmol_mgraphs = []
         batched_annotations.attachment_tmol_smiles_list = []
         batched_annotations.num_attachments = 0
-        batched_annotations.cluster1_motif_ids = []
         batched_annotations.cluster2_motif_ids = []
         # batched_annotations.cluster1_attachment_node_indices = []  # Initialized during tensorization
         # batched_annotations.cluster2_attachment_node_indices = []  # Initialized during tensorization
 
         for annotation in annotations:
-            batched_annotations.pmol_smiles_list.append(annotation.partial_mol_smiles)
+            batched_annotations.pmol_smiles_list.append(annotation.pmol_smiles)
             if not annotation.is_partial:
                 continue
             # Attachment information
-            batched_annotations.attachment_pmol_smiles_list.append(annotation.partial_mol_smiles)
+            batched_annotations.attachment_pmol_smiles_list.append(annotation.pmol_smiles)
             batched_annotations.attachment_pmol_mgraphs.append(annotation.pmol_mgraph)
             batched_annotations.attachment_tmol_smiles_list.append(annotation.mol_smiles)
             batched_annotations.num_attachments += 1
-            batched_annotations.cluster1_motif_ids.append(annotation.cluster1_motif_id)
             batched_annotations.cluster2_motif_ids.append(annotation.next_motif_id)
 
         self._tensorize_next_motif_ids(annotations, batched_annotations)
-        self._tensorize_attachment_clusters(annotations, batched_annotations)
+        self._tensorize_attachment_cluster(annotations, batched_annotations)
+        self._tensorize_cluster1_node_indices(annotations, batched_annotations)
         self._tensorize_cluster1_attachment_atoms(annotations, batched_annotations)
         self._tensorize_cluster2_attachment_atoms(annotations, batched_annotations)
         self._tensorize_attachment_bond_types(annotations, batched_annotations)
 
-        batched_annotations.validate()
+        # batched_annotations.validate()
 
         return batched_annotations

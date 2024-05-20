@@ -26,28 +26,33 @@ class SelectAttachmentAtom(nn.Module):
         self._mlp.append(nn.Sigmoid())
 
     def forward(self,
-                cluster1_molgraphs: TensorGraph,
-                cluster2_mol_reprs: torch.FloatTensor,
+                cluster1_node_hiddens: torch.FloatTensor,
+                cluster1_batch_indices: torch.LongTensor,
+                cluster2_molreprs: torch.FloatTensor,
                 target_molreprs: torch.FloatTensor):
         """
-        :param cluster1_molgraphs:
-            The molgraph for cluster1.
-        :param cluster2_mol_reprs:
+        :param cluster1_node_hiddens:
+            The node_hiddens for cluster1.
+            May take into account the molecular structure "outside" cluster1 (e.g. in case cluster1 is the pmol).
+        :param cluster1_batch_indices:
+            A list of indices indicating the batch position of each cluster1_node_hiddens.
+        :param cluster2_molreprs:
             The molrepr for cluster2 (the cluster to form the attachment with).
         :param target_molreprs:
             The molrepr for the target molecule (i.e. the output of EncodeMol).
         """
-        assert cluster1_molgraphs.check_tightly_packed_batch()
-        assert cluster1_molgraphs.node_hiddens is not None, "cluster1_molgraphs must have pre-computed node_hiddens"
-        num_attachments = cluster1_molgraphs.batch_size()
-        assert cluster2_mol_reprs.shape == (num_attachments, self._mol_repr_dim)
+        assert cluster1_batch_indices.ndim == 1
+        num_nodes = cluster1_node_hiddens.shape[0]
+        assert cluster1_node_hiddens.shape == (num_nodes, self._node_hidden_dim)
+        num_attachments = torch.unique(cluster1_batch_indices).numel()  # Batch size
+        assert cluster2_molreprs.shape == (num_attachments, self._mol_repr_dim)
         assert target_molreprs.shape == (num_attachments, self._mol_repr_dim)
 
         mlp_input = torch.cat([
-            cluster1_molgraphs.node_hiddens,
-            torch.index_select(cluster2_mol_reprs, 0, cluster1_molgraphs.batch_indices),
-            torch.index_select(target_molreprs, 0, cluster1_molgraphs.batch_indices)
+            cluster1_node_hiddens,
+            torch.index_select(cluster2_molreprs, 0, cluster1_batch_indices),
+            torch.index_select(target_molreprs, 0, cluster1_batch_indices)
         ], dim=1)
         mlp_output = self._mlp(mlp_input).squeeze(dim=-1)
-        assert mlp_output.shape == (cluster1_molgraphs.num_nodes(),)
+        assert mlp_output.shape == (num_nodes,)
         return mlp_output

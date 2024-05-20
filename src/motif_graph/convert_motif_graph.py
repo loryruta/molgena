@@ -1,4 +1,5 @@
 from common import *
+from bidict import bidict
 import networkx as nx
 from typing import *
 from rdkit import Chem
@@ -6,8 +7,7 @@ from motif_vocab import MotifVocab
 from utils.chem_utils import *
 
 
-def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph, motif_vocab: MotifVocab) \
-        -> Tuple[str, Dict[Tuple[int, int], int]]:
+def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph, motif_vocab: MotifVocab) -> Tuple[str, bidict]:
     """ Converts the input motif graph to SMILES.
 
     :return:
@@ -19,7 +19,7 @@ def convert_motif_graph_to_smiles(motif_graph: nx.DiGraph, motif_vocab: MotifVoc
 
     # (Cluster ID, Motif -relative index) -> Atom index
     # Given cluster and motif -relative index pointing to an atom, tells the generated molecule
-    cluster_atom_map = {}
+    cluster_atom_map: bidict = bidict({})
 
     # Add clusters to the final molecule
     for cid in motif_graph.nodes:

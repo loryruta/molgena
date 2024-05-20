@@ -14,10 +14,12 @@ from mol_dataset import ZincDataset
 from motif_graph.tensorize_motif_graph import create_mgraph_node_feature_vector, tensorize_mgraphs
 from mol_graph import *
 from motif_vocab import MotifVocab
+from utils.misc_utils import stopwatch_str
 from utils.tensor_utils import *
 from model.molgena import Molgena
 from annotations import Annotator, BatchedAnnotations
 from runtime_context import RuntimeContext, parse_runtime_context_from_cmdline
+from inference import ReconstructTask
 
 
 class Predictions:
@@ -25,6 +27,8 @@ class Predictions:
 
     next_motif_distr: torch.LongTensor
     """ A tensor of shape (B,) where every element is the next Motif ID to select. """
+
+    has_attachment_step: bool
 
     attachment_cluster_mask: torch.FloatTensor
     # TODO docstring
@@ -84,6 +88,7 @@ class MolgenaReconstructTask:
 
         # Create model
         self._molgena = Molgena(context.config)
+        self._molgena.describe()
 
         # Create optimizer and LR scheduler
         num_parameters = sum([param.numel() for param in self._molgena.parameters()])
@@ -109,6 +114,9 @@ class MolgenaReconstructTask:
         else:
             logging.info("Checkpoint not found, starting fresh...")
 
+        # Create reconstructor (full inference test)
+        self._reconstructor = ReconstructTask(self._molgena)
+
     def _collate_fn(self, raw_batch: List[Tuple[int, str]]) -> List[str]:
         mol_smiles_list = [mol_smiles for _, mol_smiles in raw_batch]
         return mol_smiles_list
@@ -123,56 +131,74 @@ class MolgenaReconstructTask:
         pmol_tensor_molgraphs = tensorize_smiles_list(pmol_smiles_list)
 
         # Prepare attachment data for inference
+        attachment_pmol_tensor_molgraphs = tensorize_smiles_list(annotations.attachment_pmol_smiles_list)
         attachment_pmol_mgraphs = annotations.attachment_pmol_mgraphs
         attachment_pmol_tensor_mgraphs, _ = tensorize_mgraphs(attachment_pmol_mgraphs, self._motif_vocab)
         attachment_tmol_tensor_molgraphs = tensorize_smiles_list(annotations.attachment_tmol_smiles_list)
         num_attachments = annotations.num_attachments
-        cluster2_mreprs = torch.stack(
-            [create_mgraph_node_feature_vector(mid) for mid in annotations.cluster2_motif_ids], dim=0)
-        cluster1_molgraphs = tensorize_smiles_list(
-            [self._motif_vocab.at_id(mid)['smiles'] for mid in annotations.cluster1_motif_ids])
         cluster2_molgraphs = tensorize_smiles_list(
             [self._motif_vocab.at_id(mid)['smiles'] for mid in annotations.cluster2_motif_ids])
-        cluster1_attachment_node_indices = annotations.cluster1_attachment_node_indices
-        cluster2_attachment_node_indices = annotations.cluster2_attachment_node_indices
 
         # *** INFERENCE ***
 
         pred = Predictions()
 
         # Encoding
-        mol_reprs = self._molgena.mod_encode_mol(mol_tensor_molgraphs, batch_size)
+        tmol_reprs = self._molgena.mod_encode_mol(mol_tensor_molgraphs, batch_size)
         pmol_reprs = self._molgena.mod_encode_mol(pmol_tensor_molgraphs, batch_size)
         self._molgena.mod_encode_mgraph(attachment_pmol_tensor_mgraphs, num_attachments)  # Compute node_hiddens
+        self._molgena.mod_encode_mol(attachment_pmol_tensor_molgraphs, num_attachments)  # Compute node_hiddens
         attachment_tmol_reprs = self._molgena.mod_encode_mol(attachment_tmol_tensor_molgraphs, num_attachments)
-        cluster1_reprs = self._molgena.mod_encode_mol(cluster1_molgraphs, num_attachments)
-        cluster2_reprs = self._molgena.mod_encode_mol(cluster2_molgraphs, num_attachments)
+        cluster2_reprs = self._molgena.mod_encode_mol(cluster2_molgraphs, num_attachments)  # Compute node_hiddens
 
         # SelectMotifMlp
-        pred.next_motif_distr = self._molgena.mod_select_motif_mlp(pmol_reprs, mol_reprs)  # (B, 4331)
+        pred.next_motif_distr = self._molgena.mod_select_motif_mlp(pmol_reprs, tmol_reprs)  # (B, 4331)
 
-        # TODO handle the case where all batch pmol are empty/full
+        if annotations.num_attachments == 0:
+            pred.has_attachment_step = False
+            return pred  # No attachment step
 
-        # SelectAttachmentClusters
+        pred.has_attachment_step = True  # TODO use it
+
+        # Retrieve cluster1 -specific information
+        cluster1_node_indices = annotations.cluster1_node_indices
+        cluster1_node_hiddens = attachment_pmol_tensor_molgraphs.node_hiddens[cluster1_node_indices]
+        cluster1_batch_indices = attachment_pmol_tensor_molgraphs.batch_indices[cluster1_node_indices]
+
+        # Aggregate node_hiddens to compute a cluster1 molrepr (still sensitive to pmol graph)
+        cluster1_reprs = torch.zeros((num_attachments, self._molgena.molrepr_dim,))
+        cluster1_reprs = cluster1_reprs.index_reduce(0, cluster1_batch_indices, cluster1_node_hiddens, reduce='mean')
+
+        # Retrieve cluster2 information
+        cluster2_node_hiddens = cluster2_molgraphs.node_hiddens
+        cluster2_batch_indices = cluster2_molgraphs.batch_indices
+
+        # SelectAttachmentCluster
+        cluster2_mreprs = torch.stack([
+            create_mgraph_node_feature_vector(mid) for mid in annotations.cluster2_motif_ids], dim=0)
         pred.attachment_cluster_mask = self._molgena.mod_select_attachment_clusters(
             attachment_pmol_tensor_mgraphs, cluster2_mreprs)
 
         # SelectAttachmentAtom(cluster1)
-        pred.cluster1_attachment_mask = self._molgena.mod_select_attachment_cluster1_atom(
-            cluster1_molgraphs, cluster2_reprs, attachment_tmol_reprs)
+        pred.cluster1_attachment_mask = self._molgena.mod_select_attachment_cluster1_atom(cluster1_node_hiddens,
+                                                                                          cluster1_batch_indices,
+                                                                                          cluster2_reprs,
+                                                                                          attachment_tmol_reprs)
 
         # SelectAttachmentAtom(cluster2)
-        pred.cluster2_attachment_mask = self._molgena.mod_select_attachment_cluster2_atom(
-            cluster2_molgraphs, cluster1_reprs, attachment_tmol_reprs)
+        pred.cluster2_attachment_mask = self._molgena.mod_select_attachment_cluster2_atom(cluster2_node_hiddens,
+                                                                                          cluster2_batch_indices,
+                                                                                          cluster1_reprs,
+                                                                                          attachment_tmol_reprs)
 
         # SelectAttachmentBondType
-
-        # TODO for cluster1, it'd be more informative to use node_hiddens computed on the FULL partial molecular graph
-        #   now we're computing them on cluster1 subgraph
-        cluster1_atom_hiddens = cluster1_molgraphs.node_hiddens[cluster1_attachment_node_indices]
-        cluster2_atom_hiddens = cluster2_molgraphs.node_hiddens[cluster2_attachment_node_indices]
-        pred.attachment_bond_types = self._molgena.mod_select_attachment_bond_type(
-            cluster1_atom_hiddens, cluster2_atom_hiddens, attachment_tmol_reprs)
+        cluster1_attachment_node_indices = annotations.cluster1_attachment_node_indices
+        cluster2_attachment_node_indices = annotations.cluster2_attachment_node_indices
+        cluster1_atom_hiddens = attachment_pmol_tensor_molgraphs.node_hiddens[cluster1_attachment_node_indices]
+        cluster2_atom_hiddens = cluster2_node_hiddens[cluster2_attachment_node_indices]
+        pred.attachment_bond_types = self._molgena.mod_select_attachment_bond_type(cluster1_atom_hiddens,
+                                                                                   cluster2_atom_hiddens,
+                                                                                   attachment_tmol_reprs)
 
         return pred
 
@@ -284,6 +310,7 @@ class MolgenaReconstructTask:
     def _load_checkpoint(self, checkpoint_filepath: str):
         checkpoint = torch.load(checkpoint_filepath)
         self._epoch = checkpoint['epoch']
+        self._run_iteration = checkpoint['iteration']
         self._molgena.load_state_dict(checkpoint['model'])
         self._optimizer.load_state_dict(checkpoint['optimizer'])
         self._lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
@@ -294,6 +321,7 @@ class MolgenaReconstructTask:
         checkpoint_path = path.join(self._context.checkpoints_dir, f"checkpoint-{self._epoch}.pt")
         torch.save({
             'epoch': self._epoch,
+            'iteration': self._run_iteration,
             'model': self._molgena.state_dict(),
             'optimizer': self._optimizer.state_dict(),
             'lr_scheduler': self._lr_scheduler.state_dict(),
@@ -317,6 +345,22 @@ class MolgenaReconstructTask:
             os.remove(checkpoints[-1])
             logging.debug(f"Removed old checkpoint: {checkpoints[-1]}")
 
+    def _run_full_inference(self):
+        stopwatch = stopwatch_str()
+
+        batch_size = 16  # It's very slow...
+        batch = self._test_set.df.sample(n=batch_size)['smiles'].tolist()
+        stats = self._reconstructor.reconstruct_batch(batch)
+
+        logging.info(f"Full inference; {stats}, Elapsed: {stopwatch()}")
+
+        self._writer.add_scalars("inference", {
+            "succeeded": stats.num_succeeded / stats.num_tests,
+            "max_iterations": stats.num_max_iteration_reached / stats.num_tests,
+            "missing_motifs": stats.num_missing_motifs / stats.num_tests,
+            "chemically_invalid": stats.num_chemically_invalid / stats.num_tests
+        }, self._run_iteration)
+
     def _train_epoch(self):
         for i, batch in enumerate(self._training_dataloader):
             self._train_step(i, batch)
@@ -325,7 +369,6 @@ class MolgenaReconstructTask:
 
             if self._run_iteration % 20 == 0:
                 self._writer.flush()
-                logging.debug("Flushed tensorboard writes")
 
             if self._run_iteration % 500 == 0:
                 self._save_checkpoint()
@@ -334,8 +377,12 @@ class MolgenaReconstructTask:
                 break
 
             # If "_only_first_batch", don't test
+
             if self._run_iteration % 100 == 0:
                 self._test_step()
+
+            if self._run_iteration % 200 == 0:
+                self._run_full_inference()
 
     def train(self):
         logging.info("Training started...")

@@ -72,15 +72,11 @@ class Stats:
 class ReconstructTask:
     MAX_ITERATIONS = 256
 
-    def __init__(self, context: RuntimeContext):
-        self._molgena = Molgena(context.config)
+    def __init__(self, molgena: Molgena):
+        self._molgena = molgena
         self._motif_vocab = MotifVocab.load()
 
-        # Load latest checkpoint
-        if not path.isfile(context.latest_checkpoint_file):
-            raise Exception("Latest checkpoint not found: can't initialize the model")
-        checkpoint = torch.load(context.latest_checkpoint_file)
-        self._molgena.load_state_dict(checkpoint["model"])
+        self.verbose = False
 
     def _run_reconstruct(self, mol_smiles: str) -> Tuple[str, int]:
         """ Runs inference to reconstruct the input molecule from scratch.
@@ -90,15 +86,19 @@ class ReconstructTask:
         TODO raises
         """
 
+        torch.set_grad_enabled(False)
+        self._molgena.eval()
+
         target_molrepr = self._molgena.encode(tensorize_smiles_list([mol_smiles]))
 
         pmol_smiles = ""
 
         iteration = 0
         while True:
-            logging.debug(f"[Reconstruct] {iteration + 1:03}/{self.MAX_ITERATIONS} "
-                          f"Target mol: \"{mol_smiles}\", "
-                          f"Partial mol: \"{pmol_smiles}\"")
+            if self.verbose:
+                logging.debug(f"[Reconstruct] {iteration + 1:03}/{self.MAX_ITERATIONS} "
+                              f"Target mol: \"{mol_smiles}\", "
+                              f"Partial mol: \"{pmol_smiles}\"")
 
             iteration += 1
             if iteration > self.MAX_ITERATIONS:  # Max number of iterations reached
@@ -109,19 +109,20 @@ class ReconstructTask:
                 raise InvalidMolException()
 
             # Encode the partial molecule
-            pmol_repr = self._molgena.encode(tensorize_smiles_list([pmol_smiles]))
+            pmol_molgraph = tensorize_smiles_list([pmol_smiles])
+            pmol_repr = self._molgena.encode(pmol_molgraph)
 
             # Select the next motif
             next_mid = self._molgena.select_motif(pmol_repr, target_molrepr)
             if next_mid == self._motif_vocab.end_motif_id():
-                logging.debug(f"[Reconstruct] Done; Partial mol: \"{pmol_smiles}\"")
+                # logging.debug(f"[Reconstruct] Done; Partial mol: \"{pmol_smiles}\"")
                 break  # If we selected the END token, generation finished
 
             # First step of generation
             if pmol_smiles == "":
                 motif_smiles = self._motif_vocab.at_id(next_mid)['smiles']
                 pmol_smiles = motif_smiles
-                logging.debug(f"[Reconstruct] Initial step; Attaching: \"{motif_smiles}\" (MID: {next_mid})")
+                # logging.debug(f"[Reconstruct] Initial step; Attaching: \"{motif_smiles}\" (MID: {next_mid})")
                 continue
 
             # If it's not the first step, we have to find the attachment
@@ -139,29 +140,36 @@ class ReconstructTask:
             self._molgena.encode_mgraph(pmol_tensor_mgraph)  # Compute mgraph node_hiddens
             next_cluster_node_idx = self._molgena.select_attachment_cluster(pmol_tensor_mgraph, motif_mrepr)
 
-            cluster1_cid = cid_mappings.inverse[next_cluster_node_idx]
-            cluster1_mid = pmol_mgraph.nodes[cluster1_cid]['motif_id']
-            cluster1_smiles = self._motif_vocab.at_id(cluster1_mid)['smiles']
-            cluster1_molgraph = tensorize_smiles_list([cluster1_smiles])
-            cluster1_molrepr = self._molgena.encode(cluster1_molgraph)
-
+            # Find node_indices of cluster1 in pmol molgraph
             _, cluster_atom_map = convert_motif_graph_to_smiles(pmol_mgraph, self._motif_vocab)
-            # cluster_atom_map: (cid, motif_ai) -> node_idx
+            cluster1_node_indices = list()
+            for (cid, motif_ai), node_idx in cluster_atom_map.items():
+                if cid == next_cluster_node_idx:
+                    assert node_idx not in cluster1_node_indices
+                    cluster1_node_indices.append(node_idx)
+            cluster1_node_indices = sorted(cluster1_node_indices)  # sorted() for consistency
+
+            cluster1_node_hiddens = cast(torch.FloatTensor, pmol_molgraph.node_hiddens[cluster1_node_indices])
+            cluster1_molrepr = cluster1_node_hiddens.mean(dim=0)
 
             cluster2_mid = next_mid
             cluster2_smiles = self._motif_vocab.at_id(cluster2_mid)['smiles']
             cluster2_molgraph = tensorize_smiles_list([cluster2_smiles])
-            cluster2_molrepr = self._molgena.encode(cluster2_molgraph)
+            cluster2_molrepr = self._molgena.encode(cluster2_molgraph)  # Also compute cluster2 node_hiddens
+            cluster2_node_hiddens = cluster2_molgraph.node_hiddens
 
-            cluster1_ai = self._molgena.select_attachment_cluster1_atom(cluster1_molgraph,
-                                                                        cluster2_molrepr,
-                                                                        target_molrepr)
-            cluster2_ai = self._molgena.select_attachment_cluster2_atom(cluster2_molgraph,
+            cluster1_node_idx = self._molgena.select_attachment_cluster1_atom(cluster1_node_hiddens,
+                                                                              cluster2_molrepr,
+                                                                              target_molrepr)
+            cluster2_ai = self._molgena.select_attachment_cluster2_atom(cluster2_node_hiddens,
                                                                         cluster1_molrepr,
                                                                         target_molrepr)
 
-            bond_type = self._molgena.select_attachment_bond_type(cluster1_molgraph, cluster1_ai,
-                                                                  cluster2_molgraph, cluster2_ai, target_molrepr)
+            cluster1_node_hidden = cast(torch.FloatTensor, cluster1_node_hiddens[cluster1_node_idx])
+            cluster2_node_hidden = cast(torch.FloatTensor, cluster2_node_hiddens[cluster2_ai])
+            bond_type = self._molgena.select_attachment_bond_type(cluster1_node_hidden,
+                                                                  cluster2_node_hidden,
+                                                                  target_molrepr)
 
             # logging.debug(f"[Reconstruct] Attachment:")
             # logging.debug(
@@ -170,10 +178,10 @@ class ReconstructTask:
             #     f"[Reconstruct]   Cluster 2: \"{cluster2_smiles}\" (MID: {cluster2_mid}), Atom: {cluster2_ai}")
             # logging.debug(f"[Reconstruct]   Bond type: {bond_type.name}")
 
-            pmol_ai = cluster_atom_map[cluster1_cid, cluster1_ai]
-            motif_ai = cluster2_ai
+            pmol_ai = cluster1_node_indices[cluster1_node_idx]  # Go back to pmol atom index
+            # cluster2_ai
             pmol_smiles = \
-                attach_molecules(pmol_smiles, pmol_ai, cluster2_smiles, motif_ai, bond_type)
+                attach_molecules(pmol_smiles, pmol_ai, cluster2_smiles, cluster2_ai, bond_type)
             # logging.debug(f"[Reconstruct] Attachment done; Partial mol: \"{pmol_smiles}\"")
         return pmol_smiles, iteration
 
@@ -201,20 +209,38 @@ class ReconstructTask:
             stats += self.reconstruct(mol_smiles)
 
             if log_stopwatch() > 2.:
-                logging.info(f"[Reconstruct] {i + 1}/{len(mol_smiles_list)} mol(s) ready; Stats:")
-                logging.info(f"[Reconstruct]   {stats}")
+                logging.debug(f"[Reconstruct] {i + 1}/{len(mol_smiles_list)} mol(s) ready; Stats:")
+                logging.debug(f"[Reconstruct]   {stats}")
                 log_stopwatch = stopwatch()
 
         return stats
 
+    @staticmethod
+    def from_context(context: RuntimeContext) -> 'ReconstructTask':
+        """ Creates the reconstructor from a RuntimeContext instance.
+        Internally creates the model with the specified configuration, and loads the latest checkpoint.
+        """
+
+        molgena = Molgena(context.config)
+
+        # Load the latest checkpoint found
+        if not path.isfile(context.latest_checkpoint_file):
+            raise Exception("Latest checkpoint not found: can't initialize the model")
+        checkpoint = torch.load(context.latest_checkpoint_file)
+        molgena.load_state_dict(checkpoint["model"])
+
+        return ReconstructTask(molgena)
+
 
 def _main():
     context = parse_runtime_context_from_cmdline()
-    task = ReconstructTask(context)
+
+    reconstructor = ReconstructTask.from_context(context)
+    reconstructor.verbose = True
 
     test_set = ZincDataset.test_set()
     test_batch = test_set.df['smiles'].tolist()  # mol_smiles_list
-    stats = task.reconstruct_batch(test_batch)
+    stats = reconstructor.reconstruct_batch(test_batch)
     logging.info(f"Reconstruct stats; {stats}")
 
 
