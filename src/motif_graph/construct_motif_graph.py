@@ -148,12 +148,13 @@ def _visualize_motif_graph():
 
     import matplotlib.pyplot as plt
     from rdkit.Chem import Draw
+    from time import time_ns
 
     dataset = pd.read_csv(TRAINING_CSV)
     motif_vocab = MotifVocab.load()
 
     # Sample and display a molecule
-    mol_smiles = dataset['smiles'].sample().iloc[0]
+    mol_smiles = dataset['smiles'].sample(n=1, random_state=(time_ns() & ((1 << 32) - 1))).iloc[0]
 
     plt.axis('off')
     plt.imshow(Draw.MolToImage(Chem.MolFromSmiles(mol_smiles)))
@@ -179,3 +180,7 @@ def _visualize_motif_graph():
     motif_ids = nx.get_node_attributes(motif_graph, 'motif_id')
     nx.draw(motif_graph, labels=motif_ids)
     plt.show()
+
+
+if __name__ == "__main__":
+    _visualize_motif_graph()
