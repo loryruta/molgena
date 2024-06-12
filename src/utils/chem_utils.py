@@ -151,3 +151,24 @@ def check_smiles_chemical_validity(smiles: str):
     # https://github.com/rdkit/rdkit/issues/2430#issuecomment-487336884
     mol = Chem.MolFromSmiles(smiles)
     return mol is not None
+
+
+def smiles_to_image(smiles: str):
+    import rdkit.Chem.Draw
+
+    mol = Chem.MolFromSmiles(smiles, sanitize=False)
+    return Chem.Draw.MolToImage(mol)
+
+
+def calc_tanimoto_similarity(smiles1: str, smiles2: str):
+    from rdkit.DataStructs import TanimotoSimilarity
+    from rdkit.Chem.Fingerprints import FingerprintMols
+
+    mol1 = Chem.MolFromSmiles(smiles1, sanitize=False)
+    mol2 = Chem.MolFromSmiles(smiles2, sanitize=False)
+
+    fp1 = FingerprintMols.FingerprintMol(mol1)
+    fp2 = FingerprintMols.FingerprintMol(mol2)
+
+    similarity = TanimotoSimilarity(fp1, fp2)
+    return similarity

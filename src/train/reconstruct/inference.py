@@ -2,6 +2,7 @@ import logging
 from os import path
 import sys
 from typing import *
+from enum import Enum, auto
 from rdkit import Chem
 import torch
 from mol_dataset import ZincDataset
@@ -22,7 +23,7 @@ class MaxIterationReachedException(Exception):
     pass
 
 
-class InvalidMolException(Exception):
+class ChemicallyInvalidMolException(Exception):
     """ Exception thrown if the partial molecule becomes chemically invalid. """
     pass
 
@@ -69,6 +70,13 @@ class Stats:
                f"Num missing motifs: {self.num_missing_motifs}"
 
 
+class ReconstructResult(Enum):
+    ENDED = auto()
+    MAX_ITERATIONS_REACHED = auto()
+    CHEMICALLY_INVALID_MOL = auto()
+    INVALID_MGRAPH = auto()
+
+
 class ReconstructTask:
     MAX_ITERATIONS = 256
 
@@ -78,12 +86,10 @@ class ReconstructTask:
 
         self.verbose = False
 
-    def _run_reconstruct(self, mol_smiles: str) -> Tuple[str, int]:
-        """ Runs inference to reconstruct the input molecule from scratch.
+    def run_reconstruct(self, mol_smiles: str) -> Tuple[List[str], ReconstructResult]:
+        """Runs inference to reconstruct the input molecule from scratch.
 
-        :return:
-            The SMILES of the reconstructed molecule.
-        TODO raises
+        :return: All the intermediate SMILES of the reconstructed molecule.
         """
 
         torch.set_grad_enabled(False)
@@ -92,21 +98,24 @@ class ReconstructTask:
         target_molrepr = self._molgena.encode(tensorize_smiles_list([mol_smiles]))
 
         pmol_smiles = ""
+        pmol_smiles_steps = []
 
         iteration = 0
         while True:
+            pmol_smiles_steps.append(pmol_smiles)
+
             if self.verbose:
                 logging.debug(f"[Reconstruct] {iteration + 1:03}/{self.MAX_ITERATIONS} "
                               f"Target mol: \"{mol_smiles}\", "
                               f"Partial mol: \"{pmol_smiles}\"")
 
-            iteration += 1
-            if iteration > self.MAX_ITERATIONS:  # Max number of iterations reached
-                raise MaxIterationReachedException()
-
             # Check chemical validity
             if not check_smiles_chemical_validity(pmol_smiles):
-                raise InvalidMolException()
+                return pmol_smiles_steps, ReconstructResult.CHEMICALLY_INVALID_MOL
+
+            iteration += 1
+            if iteration > self.MAX_ITERATIONS:  # Max number of iterations reached
+                return pmol_smiles_steps, ReconstructResult.MAX_ITERATIONS_REACHED
 
             # Encode the partial molecule
             pmol_molgraph = tensorize_smiles_list([pmol_smiles])
@@ -116,7 +125,8 @@ class ReconstructTask:
             next_mid = self._molgena.select_motif(pmol_repr, target_molrepr)
             if next_mid == self._motif_vocab.end_motif_id():
                 # logging.debug(f"[Reconstruct] Done; Partial mol: \"{pmol_smiles}\"")
-                break  # If we selected the END token, generation finished
+                # If we selected the END token, generation finished
+                return pmol_smiles_steps, ReconstructResult.ENDED
 
             # First step of generation
             if pmol_smiles == "":
@@ -132,7 +142,7 @@ class ReconstructTask:
             try:
                 pmol_mgraph = MgraphCache.instance().get_or_construct_mgraph(pmol_smiles)
             except Exception as _:  # Motif not found
-                raise MissingMotifException()
+                return pmol_smiles_steps, ReconstructResult.CHEMICALLY_INVALID_MOL
 
             pmol_tensor_mgraph, cid_mappings = tensorize_mgraph(pmol_mgraph, self._motif_vocab)
             pmol_tensor_mgraph.make_batched()
@@ -183,20 +193,20 @@ class ReconstructTask:
             pmol_smiles = \
                 attach_molecules(pmol_smiles, pmol_ai, cluster2_smiles, cluster2_ai, bond_type)
             # logging.debug(f"[Reconstruct] Attachment done; Partial mol: \"{pmol_smiles}\"")
-        return pmol_smiles, iteration
 
     def reconstruct(self, mol_smiles: str) -> Stats:
         stats = Stats()
         stats.num_tests = 1
         try:
-            reconstructed_mol_smiles, iteration = self._run_reconstruct(mol_smiles)
-            if reconstructed_mol_smiles == mol_smiles:
+            pmol_smiles_list = self.run_reconstruct(mol_smiles)
+            iterations = len(pmol_smiles_list)
+            if pmol_smiles_list[-1] == mol_smiles:
                 stats.num_succeeded = 1
-                stats.min_iterations = iteration
-                stats.max_iterations = iteration
+                stats.min_iterations = iterations
+                stats.max_iterations = iterations
         except MaxIterationReachedException as _:
             stats.num_max_iteration_reached = 1
-        except InvalidMolException as _:
+        except ChemicallyInvalidMolException as _:
             stats.num_chemically_invalid = 1
         except MissingMotifException as _:
             stats.num_missing_motifs = 1
