@@ -1,0 +1,127 @@
+\documentclass{article}
+
+\usepackage{biblatex}
+\usepackage{hyperref}
+\usepackage{listings}
+
+\bibliographystyle{plain}
+\bibliography{20240612_report}
+
+\title{Molgena}
+\subtitle{Molecular Generator}
+\author{Lorenzo Rutayisire}
+\date{12 Jun 2024}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+\section{Introduction}
+
+\textbf{Molgena} is a project on which I've worked between Feb 2024 and Jun 2024 for the ``AI for Bioinformatics`` university exam.
+As for the days of writing (roughly 12 Jun 2024), \textbf{the project isn't complete} but already shows nice results worth to post.
+Hopefully could be subject to future work if anyone is interested and/or I find some spare time.
+
+\subsection{Background}
+
+The task is Molecule Generation, that is the generation of novel molecules such that they
+optimize a desired chemical property (as described in \href{https://tdcommons.ai/generation_tasks/molgen/}{Therapeutics Data Commons}).
+
+To this end, I've considered the works listed below:
+
+\begin{itemize}
+\item ``Junction Tree Variational Autoencoder for Molecular Graph Generation`` \cite{jtvae2019}
+\item ``Hierarchical Generation of Molecular Graphs using Structural Motifs`` \cite{hievae2020}
+\item ``Learning to Extend Molecular Scaffolds with Structural Motifs`` \cite{microsoft2024}
+\end{itemize}
+
+I've only considered work that rely on the usage of GNNs. There are several works (previous and present) that make use
+of Transformer architectures and work directly on SMILES strings, but I've excluded those.
+
+The datasets used to perform this task are datasets consisting of chemically valid molecules, described as SMILES
+strings. I've used ZINC, a dataset consisting of 249455 compounds.
+
+Property optimization is then addressed by first constructing a latent space for molecules, then such space is mapped
+to the property score function, to obtain a $y(z)$ function. We can now search for the latent vector that maximizes
+such score (i.e. $z$ that maximizes $y$), and finally $z*$ is decoded to obtain the molecule. If the latent space
+encodes molecules semantics properly, we can possibly search for molecules similar to a query molecule.
+
+\section{Data preparation}
+
+Before actually running Molgena (training or inference), it's required to prepare the data.
+We can summarize the data preparation in the following steps:
+
+\begin{enumerate}
+\item Download the dataset
+\item Split the dataset into training, validation, and test sets
+\item Generate the Motif vocabulary
+\item Filter training, validation, and test sets
+\item Cache the mgraphs for all sets molecules
+\end{enumerate}
+
+\subsection{Dataset splitting and filtering}
+
+As mentioned above, the dataset is ZINC and initially consists of 249455 molecules.
+We \textbf{split} it randomly retaining 80\% molecules for the training set, 10\% molecules for the validation set, and 10\% molecules for the test set.
+
+Then, we \textbf{filter} molecules in all sets such that:
+\begin{itemize}
+    \item the molecule can be decomposed into valid Motifs (training set is skipped)
+    \item mgraph identity is valid for the molecule
+\end{itemize}
+Filtering is supposed to be done only after the Motif vocabulary is generated.
+
+Finally our dataset looks like the following:
+\begin{itemize}
+    \item 199560 molecules for the training set (4 discarded)
+    \item 24748 molecules for the validation set (198 discarded)
+    \item 24736 molecules for the test set (210 discarded)
+\end{itemize}
+
+\subsection{Motifs and Motif vocabulary}
+
+Following the work of \cite{jtvae2019}, \cite{hievae2020} and \cite{microsoft2024}, Molgena doesn't generate molecules
+predicting bare atoms and bonds. Instead, the building bricks are Motifs, that are drawn from a Motif vocabulary, that is
+constructed from the training set.
+
+A \textbf{Motif} is a molecular substructure that is obtained from the training set.
+
+The Motif vocabulary generation consists in iterating each training set molecule and breaking bonds if:
+\begin{enumerate}
+\item the bond connects two different rings
+\item the bond connects a ring and a non-leaf atom (degree > 1)
+\end{enumerate}
+finally we obtain a list of \textbf{candidate Motifs} by searching for the connected components of the resulting molecular graph.
+Once we iterated over all training set molecules, a candidate Motif is elected to be a Motif if it's frequent enough in
+the training set (e.g. belongs to more than 100 molecules).
+
+Since we want Motifs to cover all training set molecules, if a candidate Motif wasn't elected, we further decompose
+it to atoms and rings by breaking all bonds outside rings and searching the connected components. Those will be elected to
+Motifs.
+
+Molegna vocabulary consists of 4331 Motifs.
+
+\subsection{Motif graph (mgraph) and Mgraph caching}
+
+A Motif graph (mgraph) of a molecule is a graph constructed on top of the molecule, whose nodes are Motifs.
+It can thus be achieved only after the Motif vocabulary is built.
+Motif graphs aims at simplifying the molecule's graph structure, and ease model predictions (e.g. avoid predicting rings).
+
+In code, we refer to mgraph creation as \textbf{construction}, and the inverse operation (back to molecular graph) as \textbf{conversion}.
+Mgraph construction/conversion must be feasible for a dataset molecule to be valid, and the result must lead to the same canonical SMILES.
+
+\begin{lstlisting}[linewidth=\linewidth]
+mol2 = mgraph_convert(mgraph_construct(mol1))
+mol1 == mol2
+\end{lstlisting}
+
+We call the composition of these two functions \textbf{mgraph identity}.
+
+Mgraph construction is a common operation during training/inference and rather slow.
+To avoid it as much as possible, we \textbf{cache the mgraph} of already known molecules (all dataset molecules).
+
+\section{Architecture}
+
+
+\end{document}
