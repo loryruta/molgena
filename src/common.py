@@ -32,7 +32,6 @@ MGRAPHS_PKL = path.join(DATASET_DIR, "mgraphs.pkl")
 def _on_import():
     import torch
 
-    seed = 865002448
 
     # Setup logging
     logging.basicConfig(format='%(asctime)s [%(levelname)-5s] %(message)s', encoding='utf-8', level=logging.DEBUG)
@@ -52,14 +51,17 @@ def _on_import():
     torch.autograd.set_detect_anomaly(True)
 
     # Use fixed random seed
-    import random
-    import numpy as np
+    if 'ENABLE_RANDOM' not in os.environ:
+        import random
+        import numpy as np
 
-    logging.info(f"Using fixed random seed: {seed}")
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+        SEED = 865002448
+
+        logging.info(f"Using fixed random seed: {SEED}")
+        random.seed(SEED)
+        np.random.seed(SEED)
+        torch.manual_seed(SEED)
+        torch.cuda.manual_seed_all(SEED)
 
 
 _on_import()
