@@ -137,10 +137,17 @@ def test_mgraph_automorphism(mgraph_encoder):
 @pytest.mark.skip(reason="Visualization test")
 def test_visualize_mgraph_automorphisms(mgraph_encoder):
     import matplotlib.pyplot as plt
+    import numpy as np
 
     def int_to_color(value: int):
-        colors = plt.cm.get_cmap("tab20").colors
-        return colors[value % len(colors)]
+        rgb_int = value & 0xFFFFFF
+        rgb = np.array([
+            (rgb_int & 0xFF) / 0xFF,
+            ((rgb_int >> 8) & 0xFF) / 0xFF,
+            ((rgb_int >> 16) & 0xFF) / 0xFF]
+        )
+        NUM_CHANNEL_STEPS = 25
+        return 0.3 + (np.floor(rgb * NUM_CHANNEL_STEPS) / NUM_CHANNEL_STEPS) * 0.7
 
     def hash_tensor(tensor):
         return hash(tuple(tensor.reshape(-1).tolist()))
