@@ -1,8 +1,11 @@
 \documentclass{article}
 
+\usepackage{amsmath}
 \usepackage{biblatex}
 \usepackage{hyperref}
 \usepackage{listings}
+\usepackage{math_macro}
+\usepackage{enumitem}
 
 \bibliographystyle{plain}
 \bibliography{20240612_report}
@@ -122,6 +125,320 @@ Mgraph construction is a common operation during training/inference and rather s
 To avoid it as much as possible, we \textbf{cache the mgraph} of already known molecules (all dataset molecules).
 
 \section{Architecture}
+
+Molgena architecture resembles MoLeR architecture \cite{microsoft2024}.
+It's composed of 5 different modules, each addressing a specific task, and they operate together to incrementally construct (or optimize) an input molecule.
+Molgena exhibits an Encoder module, that is responsible for mapping molecules to a latent space that encodes their semantics.
+
+\begin{itemize}
+\item EncodeMol
+\item SelectMotifMlp
+\item SelectAttachmentClusters
+\item SelectAttachmentAtom
+\item SelectAttachmentBondType
+\end{itemize}
+
+During experiments I've tried several versions of Molgena, the one I found working better was \textbf{molgena-2b}.
+Below I describe the technical layout of each module.
+
+\subsection{EncodeMol}
+
+\begin{description}
+\item[\textbf{Input}]
+    A tensorized graph (either molecular graph or mgraph)
+\item[\textbf{Output}]
+    A latent vector representing the input graph,
+    and nodes/edges hidden vectors that are generated after the propagation step.
+\end{description}
+
+This module is a GNN, and the Message Passing used is the same described by \cite{jtvae2019}.
+Specifically, it consists of $T$ iterations to compute the edges' hidden vector $\bnu_{uv}$:
+
+\begin{equation}
+    \bnu_{uv}^{(t)} = \tau(\W_1^g \x_u + \W_2^g \x_{uv} + \W_3^g \sum_{w \in N(u) \backslash v} \nu_{wu}^{(t-1)})
+\end{equation}
+
+And one final step to calculate the nodes' hidden vector $\h_u$:
+
+\begin{equation}
+    \h_u = \tau(\U_1^g \x_u + \sum\nolimits_{v \in N(u)} \U_2^g \bnu_{vu}^{(T)})
+\end{equation}
+
+At this point, every node (or atom) will have developed a hidden vector that is dependant on its neighborhood within the graph.
+We compute the final molecule's latent vector by taking a mean of all nodes' hidden vectors:
+
+\begin{equation}
+    \h_G = \sum_i \frac{\h_i}{\len{V}}
+\end{equation}
+
+This type of message passing, isn't provided by \href{https://pytorch-geometric.readthedocs.io/en/latest/}{pytorch-geometric},
+and I didn't find easy to integrate it as a \href{https://pytorch-geometric.readthedocs.io/en/latest/notes/create_gnn.html}{custom message passing network}.
+Therefore, I've implemented it by scratch with pytorch. Graph data format and batching is \href{https://pytorch-geometric.readthedocs.io/en/latest/advanced/batching.html}{inspired on pytorch-geometric}.
+
+The same module appears in two instances within Molgena: one for molecular graphs, the other for mgraphs.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SelectMotifMlp
+
+\subsection{SelectMotifMlp}
+
+\begin{description}
+\item[\textbf{Input}]
+    The partial molecule latent vector\\
+    The target molecule latent vector
+\item[\textbf{Output}]
+    A distribution over the Motif vocabulary indicating how suitable is a Motif to be picked as next.
+    An extra item is added to indicate the END of the generation.
+    Therefore, the final output shape is $4331 + 1 = 4332$.
+\end{description}
+
+The module is an MLP with 3 hidden layers of dimensionality 384, 512, 1024.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SelectAttachmentCluster
+
+\subsection{SelectAttachmentClusters}
+
+\begin{description}
+\item[\textbf{Input}]
+    The partial molecule mgraph\\
+    The motif feature vector
+    % TODO no target molecule ???
+\item[\textbf{Output}]
+    The output is a binary vector over the partial molecule mgraph nodes (or \textbf{clusters}).
+    Thus one entry per cluster. It indicates whether a cluster participate or not to the attachment with
+    the selected next Motif.
+\end{description}
+
+This module requires the partial molecule mgraph to have valid hidden vectors, and thus message passing to have run on it.
+Afterwards, an MLP is applied on all clusters, paired with the Motif feature vector.
+We apply a sigmoid on the output logit to obtain a binary value (picked or not picked).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SelectAttachmentAtom
+
+\subsection{SelectAttachmentAtom}
+
+\begin{description}
+\item[\textbf{Input}]
+    Hidden vectors of \textbf{cluster1} nodes\\
+    Latent representation for \textbf{cluster2}\\
+    Target molecule latent vector
+\item[\textbf{Output}]
+    The output is a binary vector over the partial molecule mgraph nodes (or \textbf{clusters}).
+    Thus one entry per cluster. It indicates whether a cluster participate or not to the attachment with
+    the selected next Motif.
+\end{description}
+
+Selects a cluster1 atom to form the attachment with cluster2.
+
+This module appears in two instances in Molgena: to select the attachment atom from the partial molecule cluster, and to select the atom on the Motif.\\
+In the first instance, cluster1 is the cluster chosen by SelectAttachmentClusters, and cluster2 is the Motif.\\
+In the second instance, cluster1 is the Motif, and cluster2 a latent vector calculated as the mean of cluster1 hidden vectors.
+\textbf{Please note: the hidden vectors are computed by running message passing on the whole graph, while the mean is only on a subset of those}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SelectAttachmentBondType
+
+\subsection{SelectAttachmentBondType}
+
+\begin{description}
+\item[\textbf{Input}]
+    Hidden vector for cluster1 atom\\
+    Hidden vector for cluster2 atom\\
+    The target molecule latent vector
+\item[\textbf{Output}]
+    A distribution over the 4 possible bond types: none, single/double/triple covalent.
+\end{description}
+
+This module is an MLP whose input are the hidden vectors for cluster1 and cluster2 atoms, and the target molecule latent vector.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Training
+
+\section{Training}
+
+We've trained Molgena on the \textbf{reconstruction task}.
+
+The problem formulation is: given a molecule drawn from the dataset, we train our model to incrementally attach motifs together to reconstruct it.
+The purpose of training on such task is to build a semantically meaningful latent space, where structurally similar molecules are near each other,
+on which leverage to achieve the former property optimization task.
+
+At every training inference, we take into consideration \textbf{a single attachment step}.
+That is, drawn the molecule from the training set, we construct the mgraph for such molecule and then sample a subgraph of the mgraph.
+The sampling is performed such that it's equally probable to sample a subgraph with any number of nodes (including an empty or a full graph).
+Then, we generate annotations for all model's modules:
+the next motif is randomly sampled (any that is missing from the mgraph subgraph),
+the two attachment atoms, and the bond type.
+
+Once the whole attachment step is annotated, the inference follows these steps:
+
+\begin{lstlisting}
+pmol = "partial molecule"
+tmol = "target molecule"
+
+pmol_mgraph = ConstructMgraph(pmol)
+z_pmol = EncodeMol(pmol)
+z_tmol = EncodeMol(tmol)
+EncodeMol(pmol_mgraph)
+
+motif = SelectMotifMlp(pmol)
+z_motif = EncodeMol(motif)
+
+cluster1 = SelectAttachmentClusters(pmol_mgraph, motif.feature_vector)
+cluster1_atom = SelectAttachmentAtom(cluster1, z_motif, z_tmol)
+motif_atom = SelectAttachmentAtom(motif, repr(cluster1), z_tmol)
+bond_type = SelectAttachmentBondType(motif_atom, cluster2_atom)
+\end{lstlisting}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Loss function
+
+\subsubsection{Loss function}
+
+Every module's prediction is evaluated against its ground truth.
+For readability, modules are numbered: 1, 2, 31, 32 and 4.
+
+\begin{description}
+\item[\textbf{SelectMotifMlp (1)}]
+\begin{equation}
+    \mathcal{L}_1 = CrossEntropy(\boldsymbol{y_1}, \boldsymbol{\hat{y_1}})
+\end{equation}
+Where $\boldsymbol{y_1}$ is the prediction: a normalized vector representing a distribution over the Motif vocabulary.
+$\boldsymbol{\hat{y_1}}$ is a one-hot vector representing the ground truth.
+
+\item[\textbf{SelectAttachmentClusters (2)}]
+\begin{equation}
+    \mathcal{L}_2 = BinaryCrossEntropy(\boldsymbol{y_2}, \boldsymbol{\hat{y_2}})
+\end{equation}
+Where $\boldsymbol{y_2}$ is the prediction: a binary vector indicating whether a mgraph's node (or cluster) is eligible or not for attachment with the Motif \footnotemark[\value{footnote}].
+$\boldsymbol{\hat{y_2}}$ is the ground truth.
+
+\item[\textbf{SelectAttachmentAtom(cluster1) (31)}]
+\begin{equation}
+    \mathcal{L}_{31} = BinaryCrossEntropy(\boldsymbol{y_{31}}, \boldsymbol{\hat{y_{31}}})
+\end{equation}
+
+Where $\boldsymbol{y_{31}}$ is the prediction: a binary vector indicating whether a cluster1's atom is eligible or not for attachment with the Motif \footnotemark[\value{footnote}].
+$\boldsymbol{\hat{y_{31}}}$ is the ground truth
+
+
+\item[\textbf{SelectAttachmentAtom(motif) (32)}]
+\begin{equation}
+    \mathcal{L}_{32} = BinaryCrossEntropy(\boldsymbol{y_{32}}, \boldsymbol{\hat{y_{32}}})
+\end{equation}
+
+Where $\boldsymbol{y_{32}}$ is the prediction: a binary vector indicating whether a motif's atom is eligible or not for attachment with cluster1 \footnotemark{\value{footnote}}.
+$\boldsymbol{\hat{y_{32}}}$ is the ground truth.
+
+
+\item[\textbf{SelectAttachmentBondType (4)}]
+\begin{equation}
+    \mathcal{L}_4 = CrossEntropy(\boldsymbol{y_4}, \boldsymbol{\hat{y_4}})
+\end{equation}
+
+Where $\boldsymbol{y_{4}}$ is the prediction: a distribution over the 4 possible bond types: none \footnote{''None'' is deprecated, labels won't ever have this value}, single, double and triple covalent.
+$\boldsymbol{\hat{y_{4}}}$ is a one-hot vector indicating the ground truth.
+
+\end{description}
+
+The final loss function is the weighted sum of the contributes provided by each module:
+
+\begin{equation}
+\begin{gathered}
+\mathcal{L} = \alpha_1 * \mathcal{L}_1 +
+    \alpha_2 * \mathcal{L}_2 +
+    \alpha_{31} * \mathcal{L}_{31} +
+    \alpha_{32} * \mathcal{L}_{32} +
+    \alpha_4 * \mathcal{L}_4
+\end{gathered}
+\end{equation}
+
+\footnotetext{Note that the eligible atoms could be more than one because of graph automorphisms (there could be atoms that play the same role within the graph)}
+
+\section{Evaluation}
+
+During training, Molgena is repeatedly evaluated with a set of molecules sampled from the test set.
+The evaluation is performed at different levels: at module level, and model level.
+
+\subsection{Module level evaluation}
+
+At module level, we check the accuracy of each prediction against the labels for one attachment step:
+
+\begin{description}
+
+\item[\textbf{SelectMotifMlp (1)}]
+\begin{equation}
+    \m_1 = \frac{n_{correct}}{n_{total}}
+\end{equation}
+
+Considering a batch, the accuracy is the number of correctly predicted motifs over the batch size.
+
+\item{\textbf{SelectAttachmentClusters (2)}}
+\begin{equation}
+    \m_2 =
+    \frac{|\boldsymbol{c_{pred}} \intersection \boldsymbol{c_{label}}|}
+    {|\boldsymbol{c_{pred}} \union \boldsymbol{c_{label}}|}
+\end{equation}
+
+The accuracy is the IOU (Intersection Over Union) of the predicted clusters and the labels.
+
+\item{\textbf{SelectAttachmentAtom(cluster1) (31)}}
+\begin{equation}
+    \m_{31} =
+    \frac{|\boldsymbol{a_{pred}} \intersection \boldsymbol{a_{label}}|}
+    {|\boldsymbol{a_{pred}} \union \boldsymbol{a_{label}}|}
+\end{equation}
+
+The accuracy is the IOU of the predicted cluster1 atoms and the labels.
+
+\item{\textbf{SelectAttachmentAtom(motif) (32)}}
+\begin{equation}
+    \m_{32} =
+    \frac{|\boldsymbol{a_{pred}} \intersection \boldsymbol{a_{label}}|}
+    {|\boldsymbol{a_{pred}} \union \boldsymbol{a_{label}}|}
+\end{equation}
+
+The accuracy is the IOU of the predicted cluster1 atoms and the labels.
+
+\item{\textbf{SelectAttachmentBondType (4)}}
+\begin{equation}
+    \m_4 = \frac{n_{correct}}{n_{total}}
+\end{equation}
+
+Considering a batch, the accuracy is the number of correctly predicted bond types over the batch size.
+
+\end{description}
+
+\subsection{Model level evaluation (or ''complete inference'')}
+
+The evaluation for the reconstruction task is also called model level evaluation (or ''complete inference'' internally).
+
+This evaluation consists in drawing a molecule from the test set, albeit the target molecule.
+And inference all Molgena modules to reconstruct the target molecule from scratch.
+
+It's an iterative process that ends when the END token is selected by the SelectMotifMlp module, 
+
+\begin{lstlisting}
+tmol = "target molecule"
+pmol = ""
+
+SelectMotifMlp(pmol, tmol)
+z_pmol = EncodeMol(pmol)
+z_tmol = EncodeMol(tmol)
+EncodeMol(pmol_mgraph)
+
+motif = SelectMotifMlp(pmol)
+z_motif = EncodeMol(motif)
+
+cluster1 = SelectAttachmentClusters(pmol_mgraph, motif.feature_vector)
+cluster1_atom = SelectAttachmentAtom(cluster1, z_motif, z_tmol)
+cluster2_atom = SelectAttachmentAtom(cluster2, repr(cluster1), z_tmol)
+bond_type = SelectAttachmentBondType(cluster1_atom, cluster2_atom)
+\end{lstlisting}
+
+
+\section{Future work}
+
+\begin{itemize}
+\item Increase the accuracy of the reconstruction task, SOTA for similar models is >70\%
+\item Add target molecule latent vector to input to SelectAttachmentClusters
+\item Improve ''complete inference'' with parallelization
+\end{itemize}
 
 
 \end{document}
