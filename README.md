@@ -1,10 +1,8 @@
 # MOLGENA ([Mole]cular [gena]rator) :construction:
 
-_The project is still under development and deep thinking.
-I trust the process, and I'm confident I will eventually get awesome results but I'm also good if they're just a little
-reasonable_ :smile:
+Check the technical report (dated 19 Jun 2024):
 
-Project ~~developed~~ under development and deep thinking for the exam of the course "AI for Bioinformatics".
+https://loryruta.dev/molgena/
 
 ### Chemical properties to optimize:
 
