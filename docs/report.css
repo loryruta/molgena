@@ -1,0 +1,23 @@
+figure {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+figure img {
+    border: 1px solid lightgray;
+    max-width: none !important;
+}
+
+figure figcaption {
+    flex-basis: 100%;
+    margin-top: 1em;
+    height: 0;
+    color: gray;
+    text-align: center;
+}
+
+p:not(header > p) {
+    text-align: justify;
+}

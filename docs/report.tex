@@ -2,15 +2,12 @@
 
 \usepackage{amsmath}
 \usepackage{biblatex}
+\usepackage{enumitem}
+\usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{listings}
 \usepackage{math_macro}
-\usepackage{enumitem}
-\usepackage[nodayofweek]{datetime}
 
-\newdateformat{mydate}{\twodigit{\THEDAY}{ }\shortmonthname[\THEMONTH], \THEYEAR}
-
-\bibliographystyle{plain}
 \bibliography{report}
 
 \title{Molgena}
@@ -97,6 +94,13 @@ Those will be elected to motifs.
 
 Molegna vocabulary consists of 4331 Motifs.
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=1.2\linewidth]{./img/motifvocab.png}
+\caption{
+25 motifs sampled from the motif vocabulary}
+\end{figure}
+
 \subsection{Dataset filtering}
 
 Every dataset (training, validation and test) is filtered such that:
@@ -130,6 +134,16 @@ We call the composition of these two functions \textbf{mgraph identity}.
 
 Mgraph construction is a common operation during training/inference and rather slow.
 To avoid it as much as possible, we cache the mgraph of already known molecules (all dataset molecules).
+
+\begin{figure}[h]
+\includegraphics[width=1.0\textwidth]{./img/mgraph1.png}
+\includegraphics[width=1.0\textwidth]{./img/mgraph2.png}
+\includegraphics[width=1.0\textwidth]{./img/mgraph3.png}
+\caption{
+Example of mgraph construction starting from the molecular graph.\\
+The molecular graph is decomposed into motifs, and the mgraph is constructed using them.
+}
+\end{figure}
 
 \section{Data representation}
 
@@ -177,7 +191,7 @@ Mgraphs edge features are a concatenation of the first and second node feature v
 \section{Architecture}
 
 Molgena architecture resembles MoLeR architecture \cite{microsoft2024}.
-It's composed of 5 different modules, each addressing a specific task, and they operate together to incrementally construct an input molecule.
+It's composed of 5 different modules, each addressing a specific task, and they operate together to incrementally construct a target molecule.
 Molgena exhibits an encoder module, that is responsible for mapping molecules to a latent space that encodes their semantics.
 
 \begin{itemize}
@@ -188,8 +202,17 @@ Molgena exhibits an encoder module, that is responsible for mapping molecules to
 \item SelectAttachmentBondType
 \end{itemize}
 
-During experiments I've tried several configurations of Molgena, the one I found working better was \textbf{molgena-2b}.
-Below I describe the technical layout of each module.
+\begin{figure}[h]
+\includegraphics[width=1.5\textwidth]{./img/arch.png}
+\caption{
+Scheme of Molgena architecture.\\
+This scheme covers one attachment step (i.e. one iteration).
+The outputs are highlighted with a red frame: the Motif to attach, the cluster to form the attachment with (cluster1), the two atoms, and the bond type.
+}
+\end{figure}
+
+During experiments I've tried several configurations of Molgena, the one I found working better is called ''molgena-2b''.
+Below is described the technical layout of each module.
 
 \subsection{EncodeMol}
 
@@ -504,9 +527,36 @@ The set of isomorphic nodes is found by using the same message passing network t
 Nodes with approximately the same hidden vector are isomorphic.
 Isomorphic nodes in a graph depend on nodes/edges feature vector, and the number of iterations performed in message passing.
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=1.2\linewidth]{./img/nodeisomorphisms}
+\caption{
+Node isomorphisms for 9 mgraphs of molecules drawn from the dataset.\\
+The number is mapped to the feature vector, while the color is mapped to its hidden vector.
+Nodes with the same color have the same hidden vector, which means they are isomorphic according to the MPN used.
+}
+\end{figure}
+
 \section{Results}
 
-TODO
+As for the days of writing, I can only evaluate results for the reconstruction task, and they're not yet comparable to the literature.
+
+The model showcases good decisions for choosing the next motif, attachment atoms and bond type, but often chooses the wrong partial molecule's cluster for attachment,
+leading to a chemically invalid molecule.
+Rarely the reconstruction terminates with an END token and a chemically valid molecule, even more rarely it perfectly reconstructs the target.
+
+I think the problem can be addressed by improving the message passing network (reduce the number of node isomorphisms),
+increasing the model size, training for more and on a better hardware, \textbf{adding the target molecule to SelectAttachmentClusters} (might be the cause).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=2.0\linewidth]{./img/molgena_demo.mp4}
+\caption{
+A video showcasing a few reconstruction shots.\\
+From left to right: the target molecule to reconstruct, the partial molecule (initially empty), the result of the reconstruction process, and
+the Tanimoto similarity between the target molecule and the partial molecule (expected to increase).
+}
+\end{figure}
 
 \section{Future work}
 
@@ -518,9 +568,15 @@ TODO
 \item Explore the latent space: try PSO (Particle Swarm Optimization) to search for improved molecules
 \end{itemize}
 
-\par\noindent\rule{\textwidth}{0.4pt}
+\rule{}{0.5pt}
 
-I would like to thank \href{https://github.com/Kidara}{Kidara} from the \href{https://t.me/matematicaIT/369761}{Italian Math Telegram group},
+\textbf{Special thanks}
+
+For this work, I thank \href{https://github.com/Kidara}{Kidara} from the \href{https://t.me/matematicaIT/369761}{Italian Math Telegram group},
 and the guys from \href{https://discord.gg/jtD5nTyk}{the discord Chemistry server}, for helping me throughout this journey.
+
+\section{Bibliography}
+
+\printbibliography
 
 \end{document}
