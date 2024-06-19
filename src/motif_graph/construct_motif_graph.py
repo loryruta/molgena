@@ -144,21 +144,26 @@ def construct_motif_graph(mol_smiles: str, motif_vocab: MotifVocab) -> nx.DiGrap
 
 
 def _visualize_motif_graph():
-    """ Visualizes a random molecule, its decomposition in motifs/bonds/rings and the motif graph. """
+    """Visualizes a random molecule, its decomposition in motifs/bonds/rings and the motif graph."""
 
     import matplotlib.pyplot as plt
     from rdkit.Chem import Draw
     from time import time_ns
 
+    def plt_img_caption(text: str, size: int = 8):
+        plt.text(0.5, -0.1, text, size=size, ha='center', transform=plt.gca().transAxes)
+
     dataset = pd.read_csv(TRAINING_CSV)
     motif_vocab = MotifVocab.load()
 
     # Sample and display a molecule
-    mol_smiles = dataset['smiles'].sample(n=1, random_state=(time_ns() & ((1 << 32) - 1))).iloc[0]
+    seed = (time_ns() & ((1 << 32) - 1))
+    # mol_smiles = dataset['smiles'].sample(n=1, random_state=seed).iloc[0]
+    mol_smiles = "CCCCOc1ccc(-c2nnc(C[NH+]3CC[C@H](C)[C@H](O)C3)o2)cc1"
 
     plt.axis('off')
-    plt.imshow(Draw.MolToImage(Chem.MolFromSmiles(mol_smiles)))
-    plt.text(5, -10, mol_smiles)
+    plt.imshow(smiles_to_image(mol_smiles))
+    plt_img_caption(mol_smiles)
     plt.show()
 
     # Split and display molecule's motifs
@@ -168,10 +173,10 @@ def _visualize_motif_graph():
     for i, motif in enumerate(motifs):
         motif_id = motif_vocab.at_smiles(motif)['id']
 
-        plt.subplot(ceil(num_motifs / 5), 5, i + 1)
+        plt.subplot(ceil(num_motifs / 3), 3, i + 1)
         plt.axis('off')
-        plt.imshow(Draw.MolToImage(Chem.MolFromSmiles(motif)))
-        plt.text(5, -10, f"Motif ID {motif_id}\n\"{motif}\"")
+        plt.imshow(smiles_to_image(motif))
+        plt_img_caption(f"Motif ID {motif_id}\n\"{motif}\"")
     plt.show()
 
     # Construct and display motif graph
