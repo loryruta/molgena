@@ -6,7 +6,7 @@ cd $SCRIPT_DIR
 
 pandoc \
   -s "$SCRIPT_DIR/report.tex" \
-  -o "$SCRIPT_DIR/report.html" \
+  -o "$SCRIPT_DIR/index.html" \
   --bibliography "$SCRIPT_DIR/report.bib" \
   --csl "$SCRIPT_DIR/report.csl" \
   --citeproc \

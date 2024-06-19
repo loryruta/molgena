@@ -1,3 +1,905 @@
-<script type="text/javascript">
-    window.location.replace("./report.html");
-</script>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Lorenzo Rutayisire" />
+  <title>Molgena</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 42em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for citations */
+    div.csl-bib-body { }
+    div.csl-entry {
+      clear: both;
+    }
+    .hanging-indent div.csl-entry {
+      margin-left:2em;
+      text-indent:-2em;
+    }
+    div.csl-left-margin {
+      min-width:2em;
+      float:left;
+    }
+    div.csl-right-inline {
+      margin-left:2em;
+      padding-left:1em;
+    }
+    div.csl-indent {
+      margin-left: 2em;
+    }  </style>
+  <link rel="stylesheet" href="./report.css" />
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js"
+  type="text/javascript"></script>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Molgena</h1>
+<p class="subtitle">Molecular Generator<br />
+<br />
+Last updated<br />
+2024-06-19 </p>
+<p class="author">Lorenzo Rutayisire</p>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#introduction" id="toc-introduction"><span
+class="toc-section-number">1</span> Introduction</a></li>
+<li><a href="#data-preparation" id="toc-data-preparation"><span
+class="toc-section-number">2</span> Data preparation</a>
+<ul>
+<li><a href="#dataset-splitting" id="toc-dataset-splitting"><span
+class="toc-section-number">2.1</span> Dataset splitting</a></li>
+<li><a href="#motif-vocabulary-generation"
+id="toc-motif-vocabulary-generation"><span
+class="toc-section-number">2.2</span> Motif vocabulary
+generation</a></li>
+<li><a href="#dataset-filtering" id="toc-dataset-filtering"><span
+class="toc-section-number">2.3</span> Dataset filtering</a></li>
+<li><a href="#mgraph_construction_and_caching"
+id="toc-mgraph_construction_and_caching"><span
+class="toc-section-number">2.4</span> Motif graph construction and
+caching</a></li>
+</ul></li>
+<li><a href="#data-representation" id="toc-data-representation"><span
+class="toc-section-number">3</span> Data representation</a>
+<ul>
+<li><a href="#tensor-graphs-and-batching"
+id="toc-tensor-graphs-and-batching"><span
+class="toc-section-number">3.1</span> Tensor graphs and
+batching</a></li>
+<li><a href="#molecular-graphs" id="toc-molecular-graphs"><span
+class="toc-section-number">3.2</span> Molecular graphs</a></li>
+<li><a href="#mgraphs" id="toc-mgraphs"><span
+class="toc-section-number">3.3</span> Mgraphs</a></li>
+</ul></li>
+<li><a href="#architecture" id="toc-architecture"><span
+class="toc-section-number">4</span> Architecture</a>
+<ul>
+<li><a href="#encodemol" id="toc-encodemol"><span
+class="toc-section-number">4.1</span> EncodeMol</a></li>
+<li><a href="#selectmotifmlp" id="toc-selectmotifmlp"><span
+class="toc-section-number">4.2</span> SelectMotifMlp</a></li>
+<li><a href="#selectattachmentclusters"
+id="toc-selectattachmentclusters"><span
+class="toc-section-number">4.3</span> SelectAttachmentClusters</a></li>
+<li><a href="#selectattachmentatom" id="toc-selectattachmentatom"><span
+class="toc-section-number">4.4</span> SelectAttachmentAtom</a></li>
+<li><a href="#selectattachmentbondtype"
+id="toc-selectattachmentbondtype"><span
+class="toc-section-number">4.5</span> SelectAttachmentBondType</a></li>
+</ul></li>
+<li><a href="#training" id="toc-training"><span
+class="toc-section-number">5</span> Training</a>
+<ul>
+<li><a href="#loss-function" id="toc-loss-function"><span
+class="toc-section-number">5.0.1</span> Loss function</a></li>
+</ul></li>
+<li><a href="#evaluation" id="toc-evaluation"><span
+class="toc-section-number">6</span> Evaluation</a>
+<ul>
+<li><a href="#module-level-evaluation"
+id="toc-module-level-evaluation"><span
+class="toc-section-number">6.1</span> Module level evaluation</a></li>
+<li><a href="#model-level-evaluation-or-complete-inference"
+id="toc-model-level-evaluation-or-complete-inference"><span
+class="toc-section-number">6.2</span> Model level evaluation (or
+”complete inference”)</a></li>
+</ul></li>
+<li><a href="#dealing-with-graph-automorphisms"
+id="toc-dealing-with-graph-automorphisms"><span
+class="toc-section-number">7</span> Dealing with Graph
+automorphisms</a></li>
+<li><a href="#results" id="toc-results"><span
+class="toc-section-number">8</span> Results</a></li>
+<li><a href="#future-work" id="toc-future-work"><span
+class="toc-section-number">9</span> Future work</a></li>
+<li><a href="#bibliography" id="toc-bibliography">Bibliography</a></li>
+</ul>
+</nav>
+<h1 data-number="1" id="introduction"><span
+class="header-section-number">1</span> Introduction</h1>
+<p><strong>Molgena</strong> is a project on which I’ve worked between
+Feb 2024 and Jun 2024 for the “AI for Bioinformatics“ university
+exam.</p>
+<p>As for the days of writing (roughly mid Jun 2024), <strong>the
+project isn’t complete</strong> but already shows early results worth to
+post. Hopefully could be subject of future work if anyone is interested
+and/or I find some spare time.</p>
+<p>The task is <strong>Molecular Generation</strong>, that is the
+generation of novel molecules such that a desired chemical property is
+optimized (as described in <a
+href="https://tdcommons.ai/generation_tasks/molgen/">Therapeutics Data
+Commons</a>).</p>
+<p>To this end, I’ve considered the works listed below:</p>
+<ul>
+<li><p>“Junction Tree Variational Autoencoder for Molecular Graph
+Generation“ <span class="citation" data-cites="jtvae2019">(Jin et al.
+2019)</span></p></li>
+<li><p>“Hierarchical Generation of Molecular Graphs using Structural
+Motifs“ <span class="citation" data-cites="hievae2020">(Jin et al.
+2020)</span></p></li>
+<li><p>“Learning to Extend Molecular Scaffolds with Structural Motifs“
+<span class="citation" data-cites="microsoft2024">(Maziarz et al.
+2024)</span></p></li>
+</ul>
+<p>My focus were GNNs, there are several works (previous and present)
+that make use of Transformer architectures and work directly on SMILES
+strings, but I’ve excluded those.</p>
+<p>The datasets used to perform this task consists of chemically valid
+molecules, described as SMILES strings. I’ve used ZINC, a dataset made
+of 249455 compounds.</p>
+<p>Property optimization is then addressed by first constructing a
+latent space for molecules, that is then mapped with a given property
+score function to obtain a <span
+class="math inline">\(y(\boldsymbol{z})\)</span> function. <span
+class="math inline">\(y\)</span> is the score, and <span
+class="math inline">\(\boldsymbol{z}\)</span> is the latent
+variable.</p>
+<p>We can now search for the latent vector that maximizes such score,
+the <span class="math inline">\(\boldsymbol{z^*}\)</span> that maximizes
+<span class="math inline">\(y\)</span>. Finally <span
+class="math inline">\(z^*\)</span> is decoded to obtain the molecule. If
+the latent space encodes molecules’ semantics properly, we can possibly
+search for molecules similar to a query molecule.</p>
+<h1 data-number="2" id="data-preparation"><span
+class="header-section-number">2</span> Data preparation</h1>
+<p>Before running Molgena (training or inference), it’s required to
+prepare the data. We can summarize the data preparation into the
+following steps:</p>
+<ol>
+<li><p>Download the dataset</p></li>
+<li><p>Dataset splitting</p></li>
+<li><p>Motif vocabulary generation</p></li>
+<li><p>Dataset filtering</p></li>
+<li><p>Motif graph construction and caching</p></li>
+</ol>
+<h2 data-number="2.1" id="dataset-splitting"><span
+class="header-section-number">2.1</span> Dataset splitting</h2>
+<p>As mentioned above, the dataset is ZINC and initially consists of
+249455 molecules. It is split randomly retaining 80% of the molecules
+for the training set, 10% for the validation set, and 10% for the test
+set.</p>
+<h2 data-number="2.2" id="motif-vocabulary-generation"><span
+class="header-section-number">2.2</span> Motif vocabulary
+generation</h2>
+<p>Following the work of <span class="citation"
+data-cites="jtvae2019">(Jin et al. 2019)</span>, <span class="citation"
+data-cites="hievae2020">(Jin et al. 2020)</span> and <span
+class="citation" data-cites="microsoft2024">(Maziarz et al.
+2024)</span>, Molgena doesn’t generate molecules predicting bare atoms
+and bonds. Instead, the building bricks are <strong>Motifs</strong>,
+that are drawn from a pre-built <strong>Motif vocabulary</strong>,
+constructed from the training set.</p>
+<p>A <strong>Motif</strong> is a molecular substructure that is obtained
+from the training set.</p>
+<p>The Motif vocabulary generation consists in iterating each training
+set molecule and breaking bonds if:</p>
+<ol>
+<li><p>the bond connects two different rings</p></li>
+<li><p>the bond connects a ring and a non-leaf atom (degree &gt;
+1)</p></li>
+</ol>
+<p>This way, from every molecule we obtain a list of <strong>candidate
+motifs</strong> by searching for the connected components of the
+resulting molecular graph. Once we iterated over all training set
+molecules, a candidate motif is elected to be a motif if it’s frequent
+enough in the training set (e.g. belongs to more than 100
+molecules).</p>
+<p>Since we want motifs to cover all training set molecules, if a
+candidate Motif wasn’t elected, we further decompose it to atoms and
+rings by breaking all bonds outside rings, and searching again for the
+connected components. Those will be elected to motifs.</p>
+<p>Molegna vocabulary consists of 4331 Motifs.</p>
+<figure>
+<img src="./img/motifvocab.png" style="width:120.0%" />
+<figcaption> 25 motifs sampled from the motif vocabulary</figcaption>
+</figure>
+<h2 data-number="2.3" id="dataset-filtering"><span
+class="header-section-number">2.3</span> Dataset filtering</h2>
+<p>Every dataset (training, validation and test) is filtered such
+that:</p>
+<ul>
+<li><p>the molecule can be decomposed into valid Motifs (training set is
+skipped)</p></li>
+<li><p><em>mgraph identity</em> (see <a
+href="#mgraph_construction_and_caching" data-reference-type="ref"
+data-reference="mgraph_construction_and_caching">2.4</a>) is valid for
+the molecule</p></li>
+</ul>
+<p>After filtering, we obtain:</p>
+<ul>
+<li><p>199560 molecules for the training set (4 discarded)</p></li>
+<li><p>24748 molecules for the validation set (198 discarded)</p></li>
+<li><p>24736 molecules for the test set (210 discarded)</p></li>
+</ul>
+<h2 data-number="2.4" id="mgraph_construction_and_caching"><span
+class="header-section-number">2.4</span> Motif graph construction and
+caching</h2>
+<p>The <strong>motif graph (abbrev. ”mgraph”)</strong> of a molecule is
+a graph constructed on top of the molecule, whose nodes are motifs.
+Mgraphs aim at simplifying the molecule’s graph structure, and ease
+model predictions (e.g. avoid predicting rings atom by atom).</p>
+<p>In code, we refer to mgraph creation as
+<strong>construction</strong>, and the inverse operation (back to
+molecular graph) as <strong>conversion</strong>. Mgraph
+construction/conversion must be feasible for a dataset molecule to be
+valid, and the result must lead to the molecule (and same canonical
+SMILES).</p>
+<pre data-linewidth="\linewidth"><code>mol2 = mgraph_convert(mgraph_construct(mol1))
+mol1 == mol2</code></pre>
+<p>We call the composition of these two functions <strong>mgraph
+identity</strong>.</p>
+<p>Mgraph construction is a common operation during training/inference
+and rather slow. To avoid it as much as possible, we cache the mgraph of
+already known molecules (all dataset molecules).</p>
+<figure>
+<p><img src="./img/mgraph1.png" style="width:100.0%" alt="image" /> <img
+src="./img/mgraph2.png" style="width:100.0%" alt="image" /> <img
+src="./img/mgraph3.png" style="width:100.0%" alt="image" /></p>
+<figcaption> Example of mgraph construction starting from the molecular
+graph.<br />
+The molecular graph is decomposed into motifs, and the mgraph is
+constructed using them. </figcaption>
+</figure>
+<h1 data-number="3" id="data-representation"><span
+class="header-section-number">3</span> Data representation</h1>
+<p>In this section I will summarize the data format I’ve used for the
+model’s data: <strong>molecular graphs</strong> and
+<strong>mgraphs</strong>.</p>
+<h2 data-number="3.1" id="tensor-graphs-and-batching"><span
+class="header-section-number">3.1</span> Tensor graphs and batching</h2>
+<p>After loading, all graph data is converted into <strong>tensor
+graphs</strong>, a data structure consisting of the following
+fields:</p>
+<ul>
+<li><p>Node features</p></li>
+<li><p>Edge features</p></li>
+<li><p>Edges</p></li>
+<li><p>Node hiddens (optional)</p></li>
+<li><p>Edge hiddens (optional)</p></li>
+</ul>
+<p>For training to be effective, tensor graphs must be organized into
+batches to leverage parallelization. Batching can be achieved by
+stacking node features, edge features, node hiddens, edge hiddens, and
+edges (summing second graph edges with the number of nodes of the
+first). In this way, one <strong>batched tensor graph</strong> is
+produced, consisting of multiple disconnected graphs.</p>
+<h2 data-number="3.2" id="molecular-graphs"><span
+class="header-section-number">3.2</span> Molecular graphs</h2>
+<p>Molecular graphs (i.e. molecules) are represented as SMILES strings
+in the ZINC dataset. SMILES strings parsing is performed by <a
+href="https://www.rdkit.org/">rdkit</a>. The resulting molecule is
+converted to a tensor graph:</p>
+<ul>
+<li><p>the node features are the atomic number, explicit valence, formal
+charge, isotope and mass</p></li>
+<li><p>the edge features are the bond type</p></li>
+</ul>
+<h2 data-number="3.3" id="mgraphs"><span
+class="header-section-number">3.3</span> Mgraphs</h2>
+<p>Mgraphs are constructed to networkx graphs. Only then are converted
+to tensor graphs.</p>
+<p>Mgraph nodes’ attributes is just the motif ID. Every node’s motif ID
+is mapped to a hand-crafted feature vector of a fixed dimensionality,
+similarly to hash encoding. We seed a random number generator with the
+motif ID, and generate such feature vector.</p>
+<p>Mgraphs edge features are a concatenation of the first and second
+node feature vector (generated as described above), and the bond type
+(one scalar value).</p>
+<h1 data-number="4" id="architecture"><span
+class="header-section-number">4</span> Architecture</h1>
+<p>Molgena architecture resembles MoLeR architecture <span
+class="citation" data-cites="microsoft2024">(Maziarz et al.
+2024)</span>. It’s composed of 5 different modules, each addressing a
+specific task, and they operate together to incrementally construct a
+target molecule. Molgena exhibits an encoder module, that is responsible
+for mapping molecules to a latent space that encodes their
+semantics.</p>
+<ul>
+<li><p>EncodeMol</p></li>
+<li><p>SelectMotifMlp</p></li>
+<li><p>SelectAttachmentClusters</p></li>
+<li><p>SelectAttachmentAtom</p></li>
+<li><p>SelectAttachmentBondType</p></li>
+</ul>
+<figure>
+<img src="./img/arch.png" style="width:150.0%" />
+<figcaption> Scheme of Molgena architecture.<br />
+This scheme covers one attachment step (i.e. one iteration). The outputs
+are highlighted with a red frame: the Motif to attach, the cluster to
+form the attachment with (cluster1), the two atoms, and the bond type.
+</figcaption>
+</figure>
+<p>During experiments I’ve tried several configurations of Molgena, the
+one I found working better is called ”molgena-2b”. Below is described
+the technical layout of each module.</p>
+<h2 data-number="4.1" id="encodemol"><span
+class="header-section-number">4.1</span> EncodeMol</h2>
+<dl>
+<dt><strong>Input</strong></dt>
+<dd>
+<p>A tensorized graph (either molecular graph or mgraph)</p>
+</dd>
+<dt><strong>Output</strong></dt>
+<dd>
+<p>A latent vector representing the input graph, and nodes/edges hidden
+vectors that are generated after the propagation step.</p>
+</dd>
+</dl>
+<p>This module is a GNN, and the Message Passing used is the same
+described by <span class="citation" data-cites="jtvae2019">(Jin et al.
+2019)</span>. Specifically, it consists of <span
+class="math inline">\(T\)</span> iterations to compute the edges’ hidden
+vector <span class="math inline">\(\boldsymbol\nu_{uv}\)</span>:</p>
+<p><span class="math display">\[\boldsymbol\nu_{uv}^{(t)} =
+\tau(\mathbf{W}_1^g \mathbf{x}_u + \mathbf{W}_2^g \mathbf{x}_{uv} +
+\mathbf{W}_3^g \sum_{w \in N(u) \backslash v}
+\nu_{wu}^{(t-1)})\]</span></p>
+<p>And one final step to calculate the nodes’ hidden vector <span
+class="math inline">\(\mathbf{h}_u\)</span>:</p>
+<p><span class="math display">\[\mathbf{h}_u = \tau(\mathbf{U}_1^g
+\mathbf{x}_u + \sum\nolimits_{v \in N(u)} \mathbf{U}_2^g
+\boldsymbol\nu_{vu}^{(T)})\]</span></p>
+<p>At this point, every node (or atom) will have developed a hidden
+vector that is dependant on its neighborhood within the graph. We
+compute the final molecule’s latent vector by taking a mean of all
+nodes’ hidden vectors:</p>
+<p><span class="math display">\[\mathbf{h}_G = \sum_i
+\frac{\mathbf{h}_i}{\vert V \vert}\]</span></p>
+<p>This type of message passing, isn’t provided by <a
+href="https://pytorch-geometric.readthedocs.io/en/latest/">pytorch-geometric</a>,
+and I didn’t find easy to integrate it as a <a
+href="https://pytorch-geometric.readthedocs.io/en/latest/notes/create_gnn.html">custom
+message passing network</a>. Therefore, I’ve implemented it by scratch
+with pytorch. Graph data format and batching is <a
+href="https://pytorch-geometric.readthedocs.io/en/latest/advanced/batching.html">inspired
+on pytorch-geometric</a>.</p>
+<p>The same module appears in two instances within Molgena: one for
+molecular graphs, the other for mgraphs.</p>
+<h2 data-number="4.2" id="selectmotifmlp"><span
+class="header-section-number">4.2</span> SelectMotifMlp</h2>
+<dl>
+<dt><strong>Input</strong></dt>
+<dd>
+<p>The partial molecule latent vector<br />
+The target molecule latent vector</p>
+</dd>
+<dt><strong>Output</strong></dt>
+<dd>
+<p>A distribution over the Motif vocabulary indicating how suitable is a
+Motif to be picked as next. An extra item is added to indicate the END
+of the generation. Therefore, the final output shape is <span
+class="math inline">\(4331 + 1 = 4332\)</span>.</p>
+</dd>
+</dl>
+<p>The module is an MLP with 3 hidden layers of dimensionality 384, 512,
+1024.</p>
+<h2 data-number="4.3" id="selectattachmentclusters"><span
+class="header-section-number">4.3</span> SelectAttachmentClusters</h2>
+<dl>
+<dt><strong>Input</strong></dt>
+<dd>
+<p>The partial molecule mgraph<br />
+The motif feature vector</p>
+</dd>
+<dt><strong>Output</strong></dt>
+<dd>
+<p>The output is a binary vector over the partial molecule mgraph nodes
+(or <strong>clusters</strong>). Thus one entry per cluster. It indicates
+whether a cluster participate or not to the attachment with the selected
+next Motif.</p>
+</dd>
+</dl>
+<p>This module requires the partial molecule mgraph to have valid hidden
+vectors, and thus message passing to have run on it. Afterwards, an MLP
+is applied on all clusters, paired with the Motif feature vector. We
+apply a sigmoid on the output logit to obtain a binary value (picked or
+not picked).</p>
+<h2 data-number="4.4" id="selectattachmentatom"><span
+class="header-section-number">4.4</span> SelectAttachmentAtom</h2>
+<dl>
+<dt><strong>Input</strong></dt>
+<dd>
+<p>Hidden vectors of <strong>cluster1</strong> nodes<br />
+Latent representation for <strong>cluster2</strong><br />
+Target molecule latent vector</p>
+</dd>
+<dt><strong>Output</strong></dt>
+<dd>
+<p>The output is a binary vector over the partial molecule mgraph nodes
+(or <strong>clusters</strong>). Thus one entry per cluster. It indicates
+whether a cluster participate or not to the attachment with the selected
+next Motif.</p>
+</dd>
+</dl>
+<p>Selects a cluster1 atom to form the attachment with cluster2.</p>
+<p>This module appears in two instances in Molgena: to select the
+attachment atom from the partial molecule cluster, and to select the
+atom on the Motif.<br />
+In the first instance, cluster1 is the cluster chosen by
+SelectAttachmentClusters, and cluster2 is the Motif.<br />
+In the second instance, cluster1 is the Motif, and cluster2 a latent
+vector calculated as the mean of cluster1 hidden vectors. <strong>Please
+note: the hidden vectors are computed by running message passing on the
+whole graph, while the mean is only on a subset of those</strong>.</p>
+<h2 data-number="4.5" id="selectattachmentbondtype"><span
+class="header-section-number">4.5</span> SelectAttachmentBondType</h2>
+<dl>
+<dt><strong>Input</strong></dt>
+<dd>
+<p>Hidden vector for cluster1 atom<br />
+Hidden vector for cluster2 atom<br />
+The target molecule latent vector</p>
+</dd>
+<dt><strong>Output</strong></dt>
+<dd>
+<p>A distribution over the 4 possible bond types: none,
+single/double/triple covalent.</p>
+</dd>
+</dl>
+<p>This module is an MLP whose input are the hidden vectors for cluster1
+and cluster2 atoms, and the target molecule latent vector.</p>
+<h1 data-number="5" id="training"><span
+class="header-section-number">5</span> Training</h1>
+<p>We’ve trained Molgena on the <strong>reconstruction
+task</strong>.</p>
+<p>The problem formulation is: given a molecule drawn from the dataset,
+we train our model to incrementally attach motifs to reconstruct it. The
+purpose of training on such task is to build a semantically meaningful
+latent space, where structurally similar molecules are near each other,
+on which leverage to achieve the former property optimization task.</p>
+<p>At every training inference, we take into consideration <strong>a
+single attachment step</strong>. That is, drawn the molecule from the
+training set, we construct the mgraph for such molecule and then sample
+a subgraph of the mgraph. The sampling is performed such that it’s
+equally probable to sample a subgraph with any number of nodes
+(including an empty or a full graph). Then, we generate annotations for
+all model’s modules: the next motif is randomly sampled (any that is
+missing from the mgraph subgraph), the two attachment atoms, and the
+bond type.</p>
+<p>Once the whole attachment step is annotated, the inference follows
+these steps:</p>
+<pre><code>pmol = &quot;partial molecule&quot;
+tmol = &quot;target molecule&quot;
+
+pmol_mgraph = ConstructMgraph(pmol)
+z_pmol = EncodeMol(pmol)
+z_tmol = EncodeMol(tmol)
+EncodeMol(pmol_mgraph)
+
+motif = SelectMotifMlp(pmol)
+z_motif = EncodeMol(motif)
+
+cluster1 = SelectAttachmentClusters(pmol_mgraph, motif.feature_vector)
+cluster1_atom = SelectAttachmentAtom(cluster1, z_motif, z_tmol)
+motif_atom = SelectAttachmentAtom(motif, repr(cluster1), z_tmol)
+bond_type = SelectAttachmentBondType(motif_atom, cluster2_atom)</code></pre>
+<h3 data-number="5.0.1" id="loss-function"><span
+class="header-section-number">5.0.1</span> Loss function</h3>
+<p>Every module’s prediction is evaluated against its ground truth. For
+readability, modules are numbered: 1, 2, 31, 32 and 4.</p>
+<dl>
+<dt><strong>SelectMotifMlp (1)</strong></dt>
+<dd>
+<p><span class="math display">\[\mathcal{L}_1 =
+CrossEntropy(\boldsymbol{y_1}, \boldsymbol{\hat{y_1}})\]</span> Where
+<span class="math inline">\(\boldsymbol{y_1}\)</span> is the prediction:
+a normalized vector representing a distribution over the Motif
+vocabulary. <span class="math inline">\(\boldsymbol{\hat{y_1}}\)</span>
+is a one-hot vector representing the ground truth.</p>
+</dd>
+<dt><strong>SelectAttachmentClusters (2)</strong></dt>
+<dd>
+<p><span class="math display">\[\mathcal{L}_2 =
+BinaryCrossEntropy(\boldsymbol{y_2}, \boldsymbol{\hat{y_2}})\]</span>
+Where <span class="math inline">\(\boldsymbol{y_2}\)</span> is the
+prediction: a binary vector indicating whether a mgraph’s node (or
+cluster) is eligible or not for attachment with the Motif . <span
+class="math inline">\(\boldsymbol{\hat{y_2}}\)</span> is the ground
+truth.</p>
+</dd>
+<dt><strong>SelectAttachmentAtom(cluster1) (31)</strong></dt>
+<dd>
+<p><span class="math display">\[\mathcal{L}_{31} =
+BinaryCrossEntropy(\boldsymbol{y_{31}},
+\boldsymbol{\hat{y_{31}}})\]</span></p>
+<p>Where <span class="math inline">\(\boldsymbol{y_{31}}\)</span> is the
+prediction: a binary vector indicating whether a cluster1’s atom is
+eligible or not for attachment with the Motif . <span
+class="math inline">\(\boldsymbol{\hat{y_{31}}}\)</span> is the ground
+truth</p>
+</dd>
+<dt><strong>SelectAttachmentAtom(motif) (32)</strong></dt>
+<dd>
+<p><span class="math display">\[\mathcal{L}_{32} =
+BinaryCrossEntropy(\boldsymbol{y_{32}},
+\boldsymbol{\hat{y_{32}}})\]</span></p>
+<p>Where <span class="math inline">\(\boldsymbol{y_{32}}\)</span> is the
+prediction: a binary vector indicating whether a motif’s atom is
+eligible or not for attachment with cluster1 . <span
+class="math inline">\(\boldsymbol{\hat{y_{32}}}\)</span> is the ground
+truth.</p>
+</dd>
+<dt><strong>SelectAttachmentBondType (4)</strong></dt>
+<dd>
+<p><span class="math display">\[\mathcal{L}_4 =
+CrossEntropy(\boldsymbol{y_4}, \boldsymbol{\hat{y_4}})\]</span></p>
+<p>Where <span class="math inline">\(\boldsymbol{y_{4}}\)</span> is the
+prediction: a distribution over the 4 possible bond types: none <a
+href="#fn1" class="footnote-ref" id="fnref1"
+role="doc-noteref"><sup>1</sup></a>, single, double and triple covalent.
+<span class="math inline">\(\boldsymbol{\hat{y_{4}}}\)</span> is a
+one-hot vector indicating the ground truth.</p>
+</dd>
+</dl>
+<p>The final loss function is the weighted sum of the contributes
+provided by each module:</p>
+<p><span class="math display">\[\begin{gathered}
+\mathcal{L} = \alpha_1 * \mathcal{L}_1 +
+    \alpha_2 * \mathcal{L}_2 +
+    \alpha_{31} * \mathcal{L}_{31} +
+    \alpha_{32} * \mathcal{L}_{32} +
+    \alpha_4 * \mathcal{L}_4
+\end{gathered}\]</span></p>
+<h1 data-number="6" id="evaluation"><span
+class="header-section-number">6</span> Evaluation</h1>
+<p>During training, Molgena is repeatedly evaluated with a set of
+molecules sampled from the test set. The evaluation is performed at
+different levels: at module level, and model level.</p>
+<h2 data-number="6.1" id="module-level-evaluation"><span
+class="header-section-number">6.1</span> Module level evaluation</h2>
+<p>At module level, we check the accuracy of each prediction against the
+labels for one attachment step:</p>
+<div class="description">
+<p><span class="math display">\[\mathbf{m}_1 =
+\frac{n_{correct}}{n_{total}}\]</span></p>
+<p>Considering a batch, the accuracy is the number of correctly
+predicted motifs over the batch size.</p>
+<p><span><strong>SelectAttachmentClusters (2)</strong></span> <span
+class="math display">\[\mathbf{m}_2 =
+    \frac{|\boldsymbol{c_{pred}} \cap \boldsymbol{c_{label}}|}
+    {|\boldsymbol{c_{pred}} \cup \boldsymbol{c_{label}}|}\]</span></p>
+<p>The accuracy is the IOU<a href="#fn2" class="footnote-ref"
+id="fnref2" role="doc-noteref"><sup>2</sup></a> of the predicted
+clusters and the labels.</p>
+<p><span><strong>SelectAttachmentAtom(cluster1) (31)</strong></span>
+<span class="math display">\[\mathbf{m}_{31} =
+    \frac{|\boldsymbol{a_{pred}} \cap \boldsymbol{a_{label}}|}
+    {|\boldsymbol{a_{pred}} \cup \boldsymbol{a_{label}}|}\]</span></p>
+<p>The accuracy is the IOU of the predicted cluster1 atoms and the
+labels.</p>
+<p><span><strong>SelectAttachmentAtom(motif) (32)</strong></span> <span
+class="math display">\[\mathbf{m}_{32} =
+    \frac{|\boldsymbol{a_{pred}} \cap \boldsymbol{a_{label}}|}
+    {|\boldsymbol{a_{pred}} \cup \boldsymbol{a_{label}}|}\]</span></p>
+<p>The accuracy is the IOU of the predicted cluster1 atoms and the
+labels.</p>
+<p><span><strong>SelectAttachmentBondType (4)</strong></span> <span
+class="math display">\[\mathbf{m}_4 =
+\frac{n_{correct}}{n_{total}}\]</span></p>
+<p>Considering a batch, the accuracy is the number of correctly
+predicted bond types over the batch size.</p>
+</div>
+<h2 data-number="6.2"
+id="model-level-evaluation-or-complete-inference"><span
+class="header-section-number">6.2</span> Model level evaluation (or
+”complete inference”)</h2>
+<p>The evaluation for the reconstruction task is also called model level
+evaluation (or ”complete inference” internally).</p>
+<p>This evaluation consists in drawing a molecule from the test set,
+albeit the target molecule. And inference all Molgena modules to
+reconstruct the target molecule from scratch.</p>
+<p>It’s an iterative process that ends when the END token is selected by
+the SelectMotifMlp module,</p>
+<pre><code>tmol = &quot;target molecule&quot;
+pmol = &quot;&quot;
+
+SelectMotifMlp(pmol, tmol)
+z_pmol = EncodeMol(pmol)
+z_tmol = EncodeMol(tmol)
+EncodeMol(pmol_mgraph)
+
+motif = SelectMotifMlp(pmol)
+z_motif = EncodeMol(motif)
+
+cluster1 = SelectAttachmentClusters(pmol_mgraph, motif.feature_vector)
+cluster1_atom = SelectAttachmentAtom(cluster1, z_motif, z_tmol)
+cluster2_atom = SelectAttachmentAtom(cluster2, repr(cluster1), z_tmol)
+bond_type = SelectAttachmentBondType(cluster1_atom, cluster2_atom)</code></pre>
+<h1 data-number="7" id="dealing-with-graph-automorphisms"><span
+class="header-section-number">7</span> Dealing with Graph
+automorphisms</h1>
+<p>Graph automorphisms had been a challenge when designing the model
+training, specifically when annotating a single attachment step.</p>
+<p><strong>Graph automorphisms</strong> are mappings of graph nodes onto
+themselves, such that the graph connectivity is preserved. In our case,
+we have to take into account that nodes have different features (e.g. in
+molecular graphs, nodes will store atom properties), therefore the
+number of automorphisms is lower. If a tuple of nodes can be permuted as
+desired without changing the graph, this is a valid graph automorphism,
+and such nodes are said to be <strong>isomorphic</strong>.</p>
+<p>Molecules, and in turn mgraphs, are rich of such isomorphisms. For
+example, all carbons participating in a carbon ring are isomorphic
+nodes.</p>
+<p>In my early annotation algorithm, I was breaking the molecule bonds
+and annotating just the atom where the bond was removed. However, the
+model had no way to predict the annotated bond atom, if isomorphic to
+other atoms: they all had the same hidden vector after message passing.
+The outcome was that the model loss function converged, and in turn
+accuracy.</p>
+<p>The issue was addressed by annotating not only a single node, but all
+nodes isomorphic to it. The prediction was shifted from a single-class
+to a multi-class prediction.</p>
+<p>The set of isomorphic nodes is found by using the same message
+passing network that is also used in Molgena (randomly initialized).
+Nodes with approximately the same hidden vector are isomorphic.
+Isomorphic nodes in a graph depend on nodes/edges feature vector, and
+the number of iterations performed in message passing.</p>
+<figure>
+<img src="./img/nodeisomorphisms.png" style="width:120.0%" />
+<figcaption> Node isomorphisms for 9 mgraphs of molecules drawn from the
+dataset.<br />
+The number is mapped to the feature vector, while the color is mapped to
+its hidden vector. Nodes with the same color have the same hidden
+vector, which means they are isomorphic according to the MPN used.
+</figcaption>
+</figure>
+<h1 data-number="8" id="results"><span
+class="header-section-number">8</span> Results</h1>
+<p>As for the days of writing, I can only evaluate results for the
+reconstruction task, and they’re not yet comparable to the
+literature.</p>
+<p>The model showcases good decisions for choosing the next motif,
+attachment atoms and bond type, but often chooses the wrong partial
+molecule’s cluster for attachment, leading to a chemically invalid
+molecule. Rarely the reconstruction terminates with an END token and a
+chemically valid molecule, even more rarely it perfectly reconstructs
+the target.</p>
+<p>I think the problem can be addressed by improving the message passing
+network (reduce the number of node isomorphisms), increasing the model
+size, training for more and on a better hardware, <strong>adding the
+target molecule to SelectAttachmentClusters</strong> (might be the
+cause).</p>
+<figure>
+<video src="./img/molgena_demo.mp4" style="width:200.0%" controls=""><a
+href="./img/molgena_demo.mp4">Video</a></video>
+<figcaption> A video showcasing a few reconstruction shots.<br />
+From left to right: the target molecule to reconstruct, the partial
+molecule (initially empty), the result of the reconstruction process,
+and the Tanimoto similarity between the target molecule and the partial
+molecule (expected to increase). </figcaption>
+</figure>
+<h1 data-number="9" id="future-work"><span
+class="header-section-number">9</span> Future work</h1>
+<ul>
+<li><p>Increase the accuracy of the reconstruction task, SOTA for
+similar models is &gt;70%</p></li>
+<li><p><strong>Important</strong>: add target molecule latent vector to
+input to SelectAttachmentClusters</p></li>
+<li><p>Improve ”complete inference” performance batching and
+parallelization</p></li>
+<li><p>Improve reconstruction accuracy by improving the MPN (in
+literature they employ LSTM)</p></li>
+<li><p>Explore the latent space: try PSO (Particle Swarm Optimization)
+to search for improved molecules</p></li>
+</ul>
+<hr />
+<p><strong>Special thanks</strong></p>
+<p>For this work, I thank <a href="https://github.com/Kidara">Kidara</a>
+from the <a href="https://t.me/matematicaIT/369761">Italian Math
+Telegram group</a>, and the guys from <a
+href="https://discord.gg/jtD5nTyk">the discord Chemistry server</a>, for
+helping me throughout this journey.</p>
+<h1 class="unnumbered" id="bibliography">Bibliography</h1>
+<div id="refs" class="references csl-bib-body hanging-indent"
+role="list">
+<div id="ref-jtvae2019" class="csl-entry" role="listitem">
+Jin W, Barzilay R, Jaakkola T (2019) <a
+href="https://arxiv.org/abs/1802.04364">Junction tree variational
+autoencoder for molecular graph generation</a>
+</div>
+<div id="ref-hievae2020" class="csl-entry" role="listitem">
+Jin W, Barzilay R, Jaakkola T (2020) <a
+href="https://arxiv.org/abs/2002.03230">Hierarchical generation of
+molecular graphs using structural motifs</a>
+</div>
+<div id="ref-microsoft2024" class="csl-entry" role="listitem">
+Maziarz K, Jackson-Flux H, Cameron P, et al (2024) <a
+href="https://arxiv.org/abs/2103.03864">Learning to extend molecular
+scaffolds with structural motifs</a>
+</div>
+</div>
+<section id="footnotes" class="footnotes footnotes-end-of-document"
+role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1"><p>”None” is deprecated, labels won’t ever have this
+value<a href="#fnref1" class="footnote-back"
+role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>Intersection Over Union<a href="#fnref2"
+class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>
+</body>
+</html>
