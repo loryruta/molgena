@@ -55,6 +55,27 @@ class MotifVocab:
         return MotifVocab(MOTIF_VOCAB_CSV)
 
 
+def _visualize_motif_vocab():
+    import matplotlib.pyplot as plt
+
+    NUM_ROWS = 5
+    NUM_COLS = 5
+
+    N = NUM_ROWS * NUM_COLS
+    motifs = MotifVocab.load().df_id.sample(n=N)['smiles'].tolist()
+
+    _, axs = plt.subplots(NUM_ROWS, NUM_COLS)
+
+    axs = axs.flatten()
+    for ax in axs:
+        ax.axis('off')
+
+    for i, motif in enumerate(motifs):
+        axs[i].imshow(smiles_to_image(motif))
+
+    plt.show()
+
+
 def _main():
     from rdkit import Chem
 
