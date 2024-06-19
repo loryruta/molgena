@@ -34,7 +34,8 @@ class SelectAttachmentClusters(nn.Module):  # TODO SelectAttachmentCluster (sing
 
         mlp_input = torch.cat([
             pmol_mgraphs.node_hiddens,
-            torch.index_select(next_motif_mreprs, 0, pmol_mgraphs.batch_indices)
+            torch.index_select(next_motif_mreprs, 0, pmol_mgraphs.batch_indices),
+            # TODO target molecule is important for choosing how to attach the motif!
         ], dim=1)
         mlp_output = self._mlp(mlp_input).squeeze(dim=-1)
         assert mlp_output.shape == (pmol_mgraphs.num_nodes(),)
