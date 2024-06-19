@@ -5,7 +5,6 @@
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <meta name="author" content="Lorenzo Rutayisire" />
-  <meta name="dcterms.date" content="2024-06-12" />
   <title>Molgena</title>
   <style>
     html {
@@ -196,28 +195,37 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">Molgena</h1>
-<p class="subtitle">Molecular Generator</p>
+<p class="subtitle">Molecular Generator<br />
+<br />
+Last updated<br />
+2024-06-19 </p>
 <p class="author">Lorenzo Rutayisire</p>
-<p class="date">12 Jun 2024</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
-<li><a href="#introduction" id="toc-introduction">Introduction</a>
-<ul>
-<li><a href="#background" id="toc-background">Background</a></li>
-</ul></li>
+<li><a href="#introduction" id="toc-introduction">Introduction</a></li>
 <li><a href="#data-preparation" id="toc-data-preparation">Data
 preparation</a>
 <ul>
-<li><a href="#dataset-splitting-and-filtering"
-id="toc-dataset-splitting-and-filtering">Dataset splitting and
+<li><a href="#dataset-splitting" id="toc-dataset-splitting">Dataset
+splitting</a></li>
+<li><a href="#motif-vocabulary-generation"
+id="toc-motif-vocabulary-generation">Motif vocabulary
+generation</a></li>
+<li><a href="#dataset-filtering" id="toc-dataset-filtering">Dataset
 filtering</a></li>
-<li><a href="#motifs-and-motif-vocabulary"
-id="toc-motifs-and-motif-vocabulary">Motifs and Motif
-vocabulary</a></li>
-<li><a href="#motif-graph-mgraph-and-mgraph-caching"
-id="toc-motif-graph-mgraph-and-mgraph-caching">Motif graph (mgraph) and
-Mgraph caching</a></li>
+<li><a href="#mgraph_construction_and_caching"
+id="toc-mgraph_construction_and_caching">Motif graph construction and
+caching</a></li>
+</ul></li>
+<li><a href="#data-representation" id="toc-data-representation">Data
+representation</a>
+<ul>
+<li><a href="#tensor-graphs-and-batching"
+id="toc-tensor-graphs-and-batching">Tensor graphs and batching</a></li>
+<li><a href="#molecular-graphs" id="toc-molecular-graphs">Molecular
+graphs</a></li>
+<li><a href="#mgraphs" id="toc-mgraphs">Mgraphs</a></li>
 </ul></li>
 <li><a href="#architecture" id="toc-architecture">Architecture</a>
 <ul>
@@ -244,20 +252,24 @@ id="toc-module-level-evaluation">Module level evaluation</a></li>
 id="toc-model-level-evaluation-or-complete-inference">Model level
 evaluation (or ”complete inference”)</a></li>
 </ul></li>
+<li><a href="#dealing-with-graph-automorphisms"
+id="toc-dealing-with-graph-automorphisms">Dealing with Graph
+automorphisms</a></li>
+<li><a href="#results" id="toc-results">Results</a></li>
 <li><a href="#future-work" id="toc-future-work">Future work</a></li>
 </ul>
 </nav>
 <h1 id="introduction">Introduction</h1>
 <p><strong>Molgena</strong> is a project on which I’ve worked between
-Feb 2024 and Jun 2024 for the “AI for Bioinformatics“ university exam.
-As for the days of writing (roughly 12 Jun 2024), <strong>the project
-isn’t complete</strong> but already shows nice results worth to post.
-Hopefully could be subject to future work if anyone is interested and/or
-I find some spare time.</p>
-<h2 id="background">Background</h2>
-<p>The task is Molecule Generation, that is the generation of novel
-molecules such that they optimize a desired chemical property (as
-described in <a
+Feb 2024 and Jun 2024 for the “AI for Bioinformatics“ university
+exam.</p>
+<p>As for the days of writing (roughly mid Jun 2024), <strong>the
+project isn’t complete</strong> but already shows early results worth to
+post. Hopefully could be subject of future work if anyone is interested
+and/or I find some spare time.</p>
+<p>The task is <strong>Molecular Generation</strong>, that is the
+generation of novel molecules such that a desired chemical property is
+optimized (as described in <a
 href="https://tdcommons.ai/generation_tasks/molgen/">Therapeutics Data
 Commons</a>).</p>
 <p>To this end, I’ve considered the works listed below:</p>
@@ -272,63 +284,51 @@ and Jaakkola 2020)</span></p></li>
 <span class="citation" data-cites="microsoft2024">(Maziarz et al.
 2024)</span></p></li>
 </ul>
-<p>I’ve only considered work that rely on the usage of GNNs. There are
-several works (previous and present) that make use of Transformer
-architectures and work directly on SMILES strings, but I’ve excluded
-those.</p>
-<p>The datasets used to perform this task are datasets consisting of
-chemically valid molecules, described as SMILES strings. I’ve used ZINC,
-a dataset consisting of 249455 compounds.</p>
+<p>My focus were GNNs, there are several works (previous and present)
+that make use of Transformer architectures and work directly on SMILES
+strings, but I’ve excluded those.</p>
+<p>The datasets used to perform this task consists of chemically valid
+molecules, described as SMILES strings. I’ve used ZINC, a dataset made
+of 249455 compounds.</p>
 <p>Property optimization is then addressed by first constructing a
-latent space for molecules, then such space is mapped to the property
-score function, to obtain a <span class="math inline">\(y(z)\)</span>
-function. We can now search for the latent vector that maximizes such
-score (i.e. <span class="math inline">\(z\)</span> that maximizes <span
-class="math inline">\(y\)</span>), and finally <span
-class="math inline">\(z*\)</span> is decoded to obtain the molecule. If
-the latent space encodes molecules semantics properly, we can possibly
+latent space for molecules, that is then mapped with a given property
+score function to obtain a <span
+class="math inline">\(y(\boldsymbol{z})\)</span> function. <span
+class="math inline">\(y\)</span> is the score, and <span
+class="math inline">\(\boldsymbol{z}\)</span> is the latent
+variable.</p>
+<p>We can now search for the latent vector that maximizes such score,
+the <span class="math inline">\(\boldsymbol{z^*}\)</span> that maximizes
+<span class="math inline">\(y\)</span>. Finally <span
+class="math inline">\(z^*\)</span> is decoded to obtain the molecule. If
+the latent space encodes molecules’ semantics properly, we can possibly
 search for molecules similar to a query molecule.</p>
 <h1 id="data-preparation">Data preparation</h1>
-<p>Before actually running Molgena (training or inference), it’s
-required to prepare the data. We can summarize the data preparation in
-the following steps:</p>
+<p>Before running Molgena (training or inference), it’s required to
+prepare the data. We can summarize the data preparation into the
+following steps:</p>
 <ol>
 <li><p>Download the dataset</p></li>
-<li><p>Split the dataset into training, validation, and test
-sets</p></li>
-<li><p>Generate the Motif vocabulary</p></li>
-<li><p>Filter training, validation, and test sets</p></li>
-<li><p>Cache the mgraphs for all sets molecules</p></li>
+<li><p>Dataset splitting</p></li>
+<li><p>Motif vocabulary generation</p></li>
+<li><p>Dataset filtering</p></li>
+<li><p>Motif graph construction and caching</p></li>
 </ol>
-<h2 id="dataset-splitting-and-filtering">Dataset splitting and
-filtering</h2>
+<h2 id="dataset-splitting">Dataset splitting</h2>
 <p>As mentioned above, the dataset is ZINC and initially consists of
-249455 molecules. We <strong>split</strong> it randomly retaining 80%
-molecules for the training set, 10% molecules for the validation set,
-and 10% molecules for the test set.</p>
-<p>Then, we <strong>filter</strong> molecules in all sets such that:</p>
-<ul>
-<li><p>the molecule can be decomposed into valid Motifs (training set is
-skipped)</p></li>
-<li><p>mgraph identity is valid for the molecule</p></li>
-</ul>
-<p>Filtering is supposed to be done only after the Motif vocabulary is
-generated.</p>
-<p>Finally our dataset looks like the following:</p>
-<ul>
-<li><p>199560 molecules for the training set (4 discarded)</p></li>
-<li><p>24748 molecules for the validation set (198 discarded)</p></li>
-<li><p>24736 molecules for the test set (210 discarded)</p></li>
-</ul>
-<h2 id="motifs-and-motif-vocabulary">Motifs and Motif vocabulary</h2>
+249455 molecules. It is split randomly retaining 80% of the molecules
+for the training set, 10% for the validation set, and 10% for the test
+set.</p>
+<h2 id="motif-vocabulary-generation">Motif vocabulary generation</h2>
 <p>Following the work of <span class="citation"
 data-cites="jtvae2019">(Jin, Barzilay, and Jaakkola 2019)</span>, <span
 class="citation" data-cites="hievae2020">(Jin, Barzilay, and Jaakkola
 2020)</span> and <span class="citation"
 data-cites="microsoft2024">(Maziarz et al. 2024)</span>, Molgena doesn’t
 generate molecules predicting bare atoms and bonds. Instead, the
-building bricks are Motifs, that are drawn from a Motif vocabulary, that
-is constructed from the training set.</p>
+building bricks are <strong>Motifs</strong>, that are drawn from a
+pre-built <strong>Motif vocabulary</strong>, constructed from the
+training set.</p>
 <p>A <strong>Motif</strong> is a molecular substructure that is obtained
 from the training set.</p>
 <p>The Motif vocabulary generation consists in iterating each training
@@ -338,42 +338,101 @@ set molecule and breaking bonds if:</p>
 <li><p>the bond connects a ring and a non-leaf atom (degree &gt;
 1)</p></li>
 </ol>
-<p>finally we obtain a list of <strong>candidate Motifs</strong> by
-searching for the connected components of the resulting molecular graph.
-Once we iterated over all training set molecules, a candidate Motif is
-elected to be a Motif if it’s frequent enough in the training set (e.g.
-belongs to more than 100 molecules).</p>
-<p>Since we want Motifs to cover all training set molecules, if a
+<p>This way, from every molecule we obtain a list of <strong>candidate
+motifs</strong> by searching for the connected components of the
+resulting molecular graph. Once we iterated over all training set
+molecules, a candidate motif is elected to be a motif if it’s frequent
+enough in the training set (e.g. belongs to more than 100
+molecules).</p>
+<p>Since we want motifs to cover all training set molecules, if a
 candidate Motif wasn’t elected, we further decompose it to atoms and
-rings by breaking all bonds outside rings and searching the connected
-components. Those will be elected to Motifs.</p>
+rings by breaking all bonds outside rings, and searching again for the
+connected components. Those will be elected to motifs.</p>
 <p>Molegna vocabulary consists of 4331 Motifs.</p>
-<h2 id="motif-graph-mgraph-and-mgraph-caching">Motif graph (mgraph) and
-Mgraph caching</h2>
-<p>A Motif graph (mgraph) of a molecule is a graph constructed on top of
-the molecule, whose nodes are Motifs. It can thus be achieved only after
-the Motif vocabulary is built. Motif graphs aims at simplifying the
-molecule’s graph structure, and ease model predictions (e.g. avoid
-predicting rings).</p>
+<h2 id="dataset-filtering">Dataset filtering</h2>
+<p>Every dataset (training, validation and test) is filtered such
+that:</p>
+<ul>
+<li><p>the molecule can be decomposed into valid Motifs (training set is
+skipped)</p></li>
+<li><p><em>mgraph identity</em> (see <a
+href="#mgraph_construction_and_caching" data-reference-type="ref"
+data-reference="mgraph_construction_and_caching">2.4</a>) is valid for
+the molecule</p></li>
+</ul>
+<p>After filtering, we obtain:</p>
+<ul>
+<li><p>199560 molecules for the training set (4 discarded)</p></li>
+<li><p>24748 molecules for the validation set (198 discarded)</p></li>
+<li><p>24736 molecules for the test set (210 discarded)</p></li>
+</ul>
+<h2 id="mgraph_construction_and_caching">Motif graph construction and
+caching</h2>
+<p>The <strong>motif graph (abbrev. ”mgraph”)</strong> of a molecule is
+a graph constructed on top of the molecule, whose nodes are motifs.
+Mgraphs aim at simplifying the molecule’s graph structure, and ease
+model predictions (e.g. avoid predicting rings atom by atom).</p>
 <p>In code, we refer to mgraph creation as
 <strong>construction</strong>, and the inverse operation (back to
 molecular graph) as <strong>conversion</strong>. Mgraph
 construction/conversion must be feasible for a dataset molecule to be
-valid, and the result must lead to the same canonical SMILES.</p>
+valid, and the result must lead to the molecule (and same canonical
+SMILES).</p>
 <pre data-linewidth="\linewidth"><code>mol2 = mgraph_convert(mgraph_construct(mol1))
 mol1 == mol2</code></pre>
 <p>We call the composition of these two functions <strong>mgraph
 identity</strong>.</p>
 <p>Mgraph construction is a common operation during training/inference
-and rather slow. To avoid it as much as possible, we <strong>cache the
-mgraph</strong> of already known molecules (all dataset molecules).</p>
+and rather slow. To avoid it as much as possible, we cache the mgraph of
+already known molecules (all dataset molecules).</p>
+<h1 id="data-representation">Data representation</h1>
+<p>In this section I will summarize the data format I’ve used for the
+model’s data: <strong>molecular graphs</strong> and
+<strong>mgraphs</strong>.</p>
+<h2 id="tensor-graphs-and-batching">Tensor graphs and batching</h2>
+<p>After loading, all graph data is converted into <strong>tensor
+graphs</strong>, a data structure consisting of the following
+fields:</p>
+<ul>
+<li><p>Node features</p></li>
+<li><p>Edge features</p></li>
+<li><p>Edges</p></li>
+<li><p>Node hiddens (optional)</p></li>
+<li><p>Edge hiddens (optional)</p></li>
+</ul>
+<p>For training to be effective, tensor graphs must be organized into
+batches to leverage parallelization. Batching can be achieved by
+stacking node features, edge features, node hiddens, edge hiddens, and
+edges (summing second graph edges with the number of nodes of the
+first). In this way, one <strong>batched tensor graph</strong> is
+produced, consisting of multiple disconnected graphs.</p>
+<h2 id="molecular-graphs">Molecular graphs</h2>
+<p>Molecular graphs (i.e. molecules) are represented as SMILES strings
+in the ZINC dataset. SMILES strings parsing is performed by <a
+href="https://www.rdkit.org/">rdkit</a>. The resulting molecule is
+converted to a tensor graph:</p>
+<ul>
+<li><p>the node features are the atomic number, explicit valence, formal
+charge, isotope and mass</p></li>
+<li><p>the edge features are the bond type</p></li>
+</ul>
+<h2 id="mgraphs">Mgraphs</h2>
+<p>Mgraphs are constructed to networkx graphs. Only then are converted
+to tensor graphs.</p>
+<p>Mgraph nodes’ attributes is just the motif ID. Every node’s motif ID
+is mapped to a hand-crafted feature vector of a fixed dimensionality,
+similarly to hash encoding. We seed a random number generator with the
+motif ID, and generate such feature vector.</p>
+<p>Mgraphs edge features are a concatenation of the first and second
+node feature vector (generated as described above), and the bond type
+(one scalar value).</p>
 <h1 id="architecture">Architecture</h1>
 <p>Molgena architecture resembles MoLeR architecture <span
 class="citation" data-cites="microsoft2024">(Maziarz et al.
 2024)</span>. It’s composed of 5 different modules, each addressing a
-specific task, and they operate together to incrementally construct (or
-optimize) an input molecule. Molgena exhibits an Encoder module, that is
-responsible for mapping molecules to a latent space that encodes their
+specific task, and they operate together to incrementally construct an
+input molecule. Molgena exhibits an encoder module, that is responsible
+for mapping molecules to a latent space that encodes their
 semantics.</p>
 <ul>
 <li><p>EncodeMol</p></li>
@@ -382,9 +441,9 @@ semantics.</p>
 <li><p>SelectAttachmentAtom</p></li>
 <li><p>SelectAttachmentBondType</p></li>
 </ul>
-<p>During experiments I’ve tried several versions of Molgena, the one I
-found working better was <strong>molgena-2b</strong>. Below I describe
-the technical layout of each module.</p>
+<p>During experiments I’ve tried several configurations of Molgena, the
+one I found working better was <strong>molgena-2b</strong>. Below I
+describe the technical layout of each module.</p>
 <h2 id="encodemol">EncodeMol</h2>
 <dl>
 <dt><strong>Input</strong></dt>
@@ -510,11 +569,10 @@ and cluster2 atoms, and the target molecule latent vector.</p>
 <p>We’ve trained Molgena on the <strong>reconstruction
 task</strong>.</p>
 <p>The problem formulation is: given a molecule drawn from the dataset,
-we train our model to incrementally attach motifs together to
-reconstruct it. The purpose of training on such task is to build a
-semantically meaningful latent space, where structurally similar
-molecules are near each other, on which leverage to achieve the former
-property optimization task.</p>
+we train our model to incrementally attach motifs to reconstruct it. The
+purpose of training on such task is to build a semantically meaningful
+latent space, where structurally similar molecules are near each other,
+on which leverage to achieve the former property optimization task.</p>
 <p>At every training inference, we take into consideration <strong>a
 single attachment step</strong>. That is, drawn the molecule from the
 training set, we construct the mgraph for such molecule and then sample
@@ -621,20 +679,21 @@ labels for one attachment step:</p>
 predicted motifs over the batch size.</p>
 <p><span><strong>SelectAttachmentClusters (2)</strong></span> <span
 class="math display">\[\mathbf{m}_2 =
-    \frac{|\boldsymbol{c_{pred}} \intersection \boldsymbol{c_{label}}|}
-    {|\boldsymbol{c_{pred}} \union \boldsymbol{c_{label}}|}\]</span></p>
-<p>The accuracy is the IOU (Intersection Over Union) of the predicted
+    \frac{|\boldsymbol{c_{pred}} \cap \boldsymbol{c_{label}}|}
+    {|\boldsymbol{c_{pred}} \cup \boldsymbol{c_{label}}|}\]</span></p>
+<p>The accuracy is the IOU<a href="#fn2" class="footnote-ref"
+id="fnref2" role="doc-noteref"><sup>2</sup></a> of the predicted
 clusters and the labels.</p>
 <p><span><strong>SelectAttachmentAtom(cluster1) (31)</strong></span>
 <span class="math display">\[\mathbf{m}_{31} =
-    \frac{|\boldsymbol{a_{pred}} \intersection \boldsymbol{a_{label}}|}
-    {|\boldsymbol{a_{pred}} \union \boldsymbol{a_{label}}|}\]</span></p>
+    \frac{|\boldsymbol{a_{pred}} \cap \boldsymbol{a_{label}}|}
+    {|\boldsymbol{a_{pred}} \cup \boldsymbol{a_{label}}|}\]</span></p>
 <p>The accuracy is the IOU of the predicted cluster1 atoms and the
 labels.</p>
 <p><span><strong>SelectAttachmentAtom(motif) (32)</strong></span> <span
 class="math display">\[\mathbf{m}_{32} =
-    \frac{|\boldsymbol{a_{pred}} \intersection \boldsymbol{a_{label}}|}
-    {|\boldsymbol{a_{pred}} \union \boldsymbol{a_{label}}|}\]</span></p>
+    \frac{|\boldsymbol{a_{pred}} \cap \boldsymbol{a_{label}}|}
+    {|\boldsymbol{a_{pred}} \cup \boldsymbol{a_{label}}|}\]</span></p>
 <p>The accuracy is the IOU of the predicted cluster1 atoms and the
 labels.</p>
 <p><span><strong>SelectAttachmentBondType (4)</strong></span> <span
@@ -667,14 +726,55 @@ cluster1 = SelectAttachmentClusters(pmol_mgraph, motif.feature_vector)
 cluster1_atom = SelectAttachmentAtom(cluster1, z_motif, z_tmol)
 cluster2_atom = SelectAttachmentAtom(cluster2, repr(cluster1), z_tmol)
 bond_type = SelectAttachmentBondType(cluster1_atom, cluster2_atom)</code></pre>
+<h1 id="dealing-with-graph-automorphisms">Dealing with Graph
+automorphisms</h1>
+<p>Graph automorphisms had been a challenge when designing the model
+training, specifically when annotating a single attachment step.</p>
+<p><strong>Graph automorphisms</strong> are mappings of graph nodes onto
+themselves, such that the graph connectivity is preserved. In our case,
+we have to take into account that nodes have different features (e.g. in
+molecular graphs, nodes will store atom properties), therefore the
+number of automorphisms is lower. If a tuple of nodes can be permuted as
+desired without changing the graph, this is a valid graph automorphism,
+and such nodes are said to be <strong>isomorphic</strong>.</p>
+<p>Molecules, and in turn mgraphs, are rich of such isomorphisms. For
+example, all carbons participating in a carbon ring are isomorphic
+nodes.</p>
+<p>In my early annotation algorithm, I was breaking the molecule bonds
+and annotating just the atom where the bond was removed. However, the
+model had no way to predict the annotated bond atom, if isomorphic to
+other atoms: they all had the same hidden vector after message passing.
+The outcome was that the model loss function converged, and in turn
+accuracy.</p>
+<p>The issue was addressed by annotating not only a single node, but all
+nodes isomorphic to it. The prediction was shifted from a single-class
+to a multi-class prediction.</p>
+<p>The set of isomorphic nodes is found by using the same message
+passing network that is also used in Molgena (randomly initialized).
+Nodes with approximately the same hidden vector are isomorphic.
+Isomorphic nodes in a graph depend on nodes/edges feature vector, and
+the number of iterations performed in message passing.</p>
+<h1 id="results">Results</h1>
+<p>TODO</p>
 <h1 id="future-work">Future work</h1>
 <ul>
 <li><p>Increase the accuracy of the reconstruction task, SOTA for
 similar models is &gt;70%</p></li>
-<li><p>Add target molecule latent vector to input to
-SelectAttachmentClusters</p></li>
-<li><p>Improve ”complete inference” with parallelization</p></li>
+<li><p><strong>Important</strong>: add target molecule latent vector to
+input to SelectAttachmentClusters</p></li>
+<li><p>Improve ”complete inference” performance batching and
+parallelization</p></li>
+<li><p>Improve reconstruction accuracy by improving the MPN (in
+literature they employ LSTM)</p></li>
+<li><p>Explore the latent space: try PSO (Particle Swarm Optimization)
+to search for improved molecules</p></li>
 </ul>
+<hr />
+<p>I would like to thank <a href="https://github.com/Kidara">Kidara</a>
+from the <a href="https://t.me/matematicaIT/369761">Italian Math
+Telegram group</a>, and the guys from <a
+href="https://discord.gg/jtD5nTyk">the discord Chemistry server</a>, for
+helping me throughout this journey.</p>
 <div id="refs" class="references csl-bib-body hanging-indent"
 data-entry-spacing="0" role="list">
 <div id="ref-jtvae2019" class="csl-entry" role="listitem">
@@ -702,6 +802,8 @@ role="doc-endnotes">
 <li id="fn1"><p>”None” is deprecated, labels won’t ever have this
 value<a href="#fnref1" class="footnote-back"
 role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>Intersection Over Union<a href="#fnref2"
+class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section>
 </body>

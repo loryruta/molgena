@@ -6,14 +6,20 @@
 \usepackage{listings}
 \usepackage{math_macro}
 \usepackage{enumitem}
+\usepackage[nodayofweek]{datetime}
+
+\newdateformat{mydate}{\twodigit{\THEDAY}{ }\shortmonthname[\THEMONTH], \THEYEAR}
 
 \bibliographystyle{plain}
 \bibliography{20240612_report}
 
 \title{Molgena}
-\subtitle{Molecular Generator}
+\subtitle{Molecular Generator\\
+\\
+Last updated\\
+\today
+}
 \author{Lorenzo Rutayisire}
-\date{12 Jun 2024}
 
 \begin{document}
 
@@ -23,13 +29,12 @@
 \section{Introduction}
 
 \textbf{Molgena} is a project on which I've worked between Feb 2024 and Jun 2024 for the ``AI for Bioinformatics`` university exam.
-As for the days of writing (roughly 12 Jun 2024), \textbf{the project isn't complete} but already shows nice results worth to post.
-Hopefully could be subject to future work if anyone is interested and/or I find some spare time.
 
-\subsection{Background}
+As for the days of writing (roughly mid Jun 2024), \textbf{the project isn't complete} but already shows early results worth to post.
+Hopefully could be subject of future work if anyone is interested and/or I find some spare time.
 
-The task is Molecule Generation, that is the generation of novel molecules such that they
-optimize a desired chemical property (as described in \href{https://tdcommons.ai/generation_tasks/molgen/}{Therapeutics Data Commons}).
+The task is \textbf{Molecular Generation}, that is the generation of novel molecules such that a desired chemical property is optimized
+(as described in \href{https://tdcommons.ai/generation_tasks/molgen/}{Therapeutics Data Commons}).
 
 To this end, I've considered the works listed below:
 
@@ -39,54 +44,40 @@ To this end, I've considered the works listed below:
 \item ``Learning to Extend Molecular Scaffolds with Structural Motifs`` \cite{microsoft2024}
 \end{itemize}
 
-I've only considered work that rely on the usage of GNNs. There are several works (previous and present) that make use
-of Transformer architectures and work directly on SMILES strings, but I've excluded those.
+My focus were GNNs, there are several works (previous and present) that make use of Transformer architectures and work directly on SMILES strings, but I've excluded those.
 
-The datasets used to perform this task are datasets consisting of chemically valid molecules, described as SMILES
-strings. I've used ZINC, a dataset consisting of 249455 compounds.
+The datasets used to perform this task consists of chemically valid molecules, described as SMILES
+strings. I've used ZINC, a dataset made of 249455 compounds.
 
-Property optimization is then addressed by first constructing a latent space for molecules, then such space is mapped
-to the property score function, to obtain a $y(z)$ function. We can now search for the latent vector that maximizes
-such score (i.e. $z$ that maximizes $y$), and finally $z*$ is decoded to obtain the molecule. If the latent space
-encodes molecules semantics properly, we can possibly search for molecules similar to a query molecule.
+Property optimization is then addressed by first constructing a latent space for molecules, that is then mapped with a given property score function to obtain a $y(\boldsymbol{z})$ function.
+$y$ is the score, and $\boldsymbol{z}$ is the latent variable.
+
+We can now search for the latent vector that maximizes such score, the $\boldsymbol{z^*}$ that maximizes $y$.
+Finally $z^*$ is decoded to obtain the molecule.
+If the latent space encodes molecules' semantics properly, we can possibly search for molecules similar to a query molecule.
 
 \section{Data preparation}
 
-Before actually running Molgena (training or inference), it's required to prepare the data.
-We can summarize the data preparation in the following steps:
+Before running Molgena (training or inference), it's required to prepare the data.
+We can summarize the data preparation into the following steps:
 
 \begin{enumerate}
 \item Download the dataset
-\item Split the dataset into training, validation, and test sets
-\item Generate the Motif vocabulary
-\item Filter training, validation, and test sets
-\item Cache the mgraphs for all sets molecules
+\item Dataset splitting
+\item Motif vocabulary generation
+\item Dataset filtering
+\item Motif graph construction and caching
 \end{enumerate}
 
-\subsection{Dataset splitting and filtering}
+\subsection{Dataset splitting}
 
 As mentioned above, the dataset is ZINC and initially consists of 249455 molecules.
-We \textbf{split} it randomly retaining 80\% molecules for the training set, 10\% molecules for the validation set, and 10\% molecules for the test set.
+It is split randomly retaining 80\% of the molecules for the training set, 10\% for the validation set, and 10\% for the test set.
 
-Then, we \textbf{filter} molecules in all sets such that:
-\begin{itemize}
-    \item the molecule can be decomposed into valid Motifs (training set is skipped)
-    \item mgraph identity is valid for the molecule
-\end{itemize}
-Filtering is supposed to be done only after the Motif vocabulary is generated.
+\subsection{Motif vocabulary generation}
 
-Finally our dataset looks like the following:
-\begin{itemize}
-    \item 199560 molecules for the training set (4 discarded)
-    \item 24748 molecules for the validation set (198 discarded)
-    \item 24736 molecules for the test set (210 discarded)
-\end{itemize}
-
-\subsection{Motifs and Motif vocabulary}
-
-Following the work of \cite{jtvae2019}, \cite{hievae2020} and \cite{microsoft2024}, Molgena doesn't generate molecules
-predicting bare atoms and bonds. Instead, the building bricks are Motifs, that are drawn from a Motif vocabulary, that is
-constructed from the training set.
+Following the work of \cite{jtvae2019}, \cite{hievae2020} and \cite{microsoft2024}, Molgena doesn't generate molecules predicting bare atoms and bonds.
+Instead, the building bricks are \textbf{Motifs}, that are drawn from a pre-built \textbf{Motif vocabulary}, constructed from the training set.
 
 A \textbf{Motif} is a molecular substructure that is obtained from the training set.
 
@@ -95,24 +86,40 @@ The Motif vocabulary generation consists in iterating each training set molecule
 \item the bond connects two different rings
 \item the bond connects a ring and a non-leaf atom (degree > 1)
 \end{enumerate}
-finally we obtain a list of \textbf{candidate Motifs} by searching for the connected components of the resulting molecular graph.
-Once we iterated over all training set molecules, a candidate Motif is elected to be a Motif if it's frequent enough in
+
+This way, from every molecule we obtain a list of \textbf{candidate motifs} by searching for the connected components of the resulting molecular graph.
+Once we iterated over all training set molecules, a candidate motif is elected to be a motif if it's frequent enough in
 the training set (e.g. belongs to more than 100 molecules).
 
-Since we want Motifs to cover all training set molecules, if a candidate Motif wasn't elected, we further decompose
-it to atoms and rings by breaking all bonds outside rings and searching the connected components. Those will be elected to
-Motifs.
+Since we want motifs to cover all training set molecules, if a candidate Motif wasn't elected, we further decompose
+it to atoms and rings by breaking all bonds outside rings, and searching again for the connected components.
+Those will be elected to motifs.
 
 Molegna vocabulary consists of 4331 Motifs.
 
-\subsection{Motif graph (mgraph) and Mgraph caching}
+\subsection{Dataset filtering}
 
-A Motif graph (mgraph) of a molecule is a graph constructed on top of the molecule, whose nodes are Motifs.
-It can thus be achieved only after the Motif vocabulary is built.
-Motif graphs aims at simplifying the molecule's graph structure, and ease model predictions (e.g. avoid predicting rings).
+Every dataset (training, validation and test) is filtered such that:
+\begin{itemize}
+    \item the molecule can be decomposed into valid Motifs (training set is skipped)
+    \item \textit{mgraph identity} (see \ref{mgraph_construction_and_caching}) is valid for the molecule
+\end{itemize}
+
+After filtering, we obtain:
+\begin{itemize}
+    \item 199560 molecules for the training set (4 discarded)
+    \item 24748 molecules for the validation set (198 discarded)
+    \item 24736 molecules for the test set (210 discarded)
+\end{itemize}
+
+\subsection{Motif graph construction and caching}
+\label{mgraph_construction_and_caching}
+
+The \textbf{motif graph (abbrev. ''mgraph'')} of a molecule is a graph constructed on top of the molecule, whose nodes are motifs.
+Mgraphs aim at simplifying the molecule's graph structure, and ease model predictions (e.g. avoid predicting rings atom by atom).
 
 In code, we refer to mgraph creation as \textbf{construction}, and the inverse operation (back to molecular graph) as \textbf{conversion}.
-Mgraph construction/conversion must be feasible for a dataset molecule to be valid, and the result must lead to the same canonical SMILES.
+Mgraph construction/conversion must be feasible for a dataset molecule to be valid, and the result must lead to the molecule (and same canonical SMILES).
 
 \begin{lstlisting}[linewidth=\linewidth]
 mol2 = mgraph_convert(mgraph_construct(mol1))
@@ -122,13 +129,56 @@ mol1 == mol2
 We call the composition of these two functions \textbf{mgraph identity}.
 
 Mgraph construction is a common operation during training/inference and rather slow.
-To avoid it as much as possible, we \textbf{cache the mgraph} of already known molecules (all dataset molecules).
+To avoid it as much as possible, we cache the mgraph of already known molecules (all dataset molecules).
+
+\section{Data representation}
+
+In this section I will summarize the data format I've used for the model's data: \textbf{molecular graphs} and \textbf{mgraphs}.
+
+\subsection{Tensor graphs and batching}
+
+After loading, all graph data is converted into \textbf{tensor graphs}, a data structure consisting of the following fields:
+
+\begin{itemize}
+\item Node features
+\item Edge features
+\item Edges
+\item Node hiddens (optional)
+\item Edge hiddens (optional)
+\end{itemize}
+
+For training to be effective, tensor graphs must be organized into batches to leverage parallelization.
+Batching can be achieved by stacking node features, edge features, node hiddens, edge hiddens, and edges (summing second
+graph edges with the number of nodes of the first).
+In this way, one \textbf{batched tensor graph} is produced, consisting of multiple disconnected graphs.
+
+
+\subsection{Molecular graphs}
+
+Molecular graphs (i.e. molecules) are represented as SMILES strings in the ZINC dataset.
+SMILES strings parsing is performed by \href{https://www.rdkit.org/}{rdkit}.
+The resulting molecule is converted to a tensor graph:
+\begin{itemize}
+\item the node features are the atomic number, explicit valence, formal charge, isotope and mass
+\item the edge features are the bond type
+\end{itemize}
+
+\subsection{Mgraphs}
+
+Mgraphs are constructed to networkx graphs.
+Only then are converted to tensor graphs.
+
+Mgraph nodes' attributes is just the motif ID.
+Every node's motif ID is mapped to a hand-crafted feature vector of a fixed dimensionality, similarly to hash encoding.
+We seed a random number generator with the motif ID, and generate such feature vector.
+
+Mgraphs edge features are a concatenation of the first and second node feature vector (generated as described above), and the bond type (one scalar value).
 
 \section{Architecture}
 
 Molgena architecture resembles MoLeR architecture \cite{microsoft2024}.
-It's composed of 5 different modules, each addressing a specific task, and they operate together to incrementally construct (or optimize) an input molecule.
-Molgena exhibits an Encoder module, that is responsible for mapping molecules to a latent space that encodes their semantics.
+It's composed of 5 different modules, each addressing a specific task, and they operate together to incrementally construct an input molecule.
+Molgena exhibits an encoder module, that is responsible for mapping molecules to a latent space that encodes their semantics.
 
 \begin{itemize}
 \item EncodeMol
@@ -138,7 +188,7 @@ Molgena exhibits an Encoder module, that is responsible for mapping molecules to
 \item SelectAttachmentBondType
 \end{itemize}
 
-During experiments I've tried several versions of Molgena, the one I found working better was \textbf{molgena-2b}.
+During experiments I've tried several configurations of Molgena, the one I found working better was \textbf{molgena-2b}.
 Below I describe the technical layout of each module.
 
 \subsection{EncodeMol}
@@ -255,7 +305,7 @@ This module is an MLP whose input are the hidden vectors for cluster1 and cluste
 
 We've trained Molgena on the \textbf{reconstruction task}.
 
-The problem formulation is: given a molecule drawn from the dataset, we train our model to incrementally attach motifs together to reconstruct it.
+The problem formulation is: given a molecule drawn from the dataset, we train our model to incrementally attach motifs to reconstruct it.
 The purpose of training on such task is to build a semantically meaningful latent space, where structurally similar molecules are near each other,
 on which leverage to achieve the former property optimization task.
 
@@ -371,17 +421,17 @@ Considering a batch, the accuracy is the number of correctly predicted motifs ov
 \item{\textbf{SelectAttachmentClusters (2)}}
 \begin{equation}
     \m_2 =
-    \frac{|\boldsymbol{c_{pred}} \intersection \boldsymbol{c_{label}}|}
-    {|\boldsymbol{c_{pred}} \union \boldsymbol{c_{label}}|}
+    \frac{|\boldsymbol{c_{pred}} \cap \boldsymbol{c_{label}}|}
+    {|\boldsymbol{c_{pred}} \cup \boldsymbol{c_{label}}|}
 \end{equation}
 
-The accuracy is the IOU (Intersection Over Union) of the predicted clusters and the labels.
+The accuracy is the IOU\footnote{Intersection Over Union} of the predicted clusters and the labels.
 
 \item{\textbf{SelectAttachmentAtom(cluster1) (31)}}
 \begin{equation}
     \m_{31} =
-    \frac{|\boldsymbol{a_{pred}} \intersection \boldsymbol{a_{label}}|}
-    {|\boldsymbol{a_{pred}} \union \boldsymbol{a_{label}}|}
+    \frac{|\boldsymbol{a_{pred}} \cap \boldsymbol{a_{label}}|}
+    {|\boldsymbol{a_{pred}} \cup \boldsymbol{a_{label}}|}
 \end{equation}
 
 The accuracy is the IOU of the predicted cluster1 atoms and the labels.
@@ -389,8 +439,8 @@ The accuracy is the IOU of the predicted cluster1 atoms and the labels.
 \item{\textbf{SelectAttachmentAtom(motif) (32)}}
 \begin{equation}
     \m_{32} =
-    \frac{|\boldsymbol{a_{pred}} \intersection \boldsymbol{a_{label}}|}
-    {|\boldsymbol{a_{pred}} \union \boldsymbol{a_{label}}|}
+    \frac{|\boldsymbol{a_{pred}} \cap \boldsymbol{a_{label}}|}
+    {|\boldsymbol{a_{pred}} \cup \boldsymbol{a_{label}}|}
 \end{equation}
 
 The accuracy is the IOU of the predicted cluster1 atoms and the labels.
@@ -431,14 +481,46 @@ cluster2_atom = SelectAttachmentAtom(cluster2, repr(cluster1), z_tmol)
 bond_type = SelectAttachmentBondType(cluster1_atom, cluster2_atom)
 \end{lstlisting}
 
+\section{Dealing with Graph automorphisms}
+
+Graph automorphisms had been a challenge when designing the model training, specifically when annotating a single attachment step.
+
+\textbf{Graph automorphisms} are mappings of graph nodes onto themselves, such that the graph connectivity is preserved.
+In our case, we have to take into account that nodes have different features (e.g. in molecular graphs, nodes will store atom properties),
+therefore the number of automorphisms is lower.
+If a tuple of nodes can be permuted as desired without changing the graph, this is a valid graph automorphism, and such nodes are said to be \textbf{isomorphic}.
+
+Molecules, and in turn mgraphs, are rich of such isomorphisms.
+For example, all carbons participating in a carbon ring are isomorphic nodes.
+
+In my early annotation algorithm, I was breaking the molecule bonds and annotating just the atom where the bond was removed.
+However, the model had no way to predict the annotated bond atom, if isomorphic to other atoms: they all had the same hidden vector after message passing.
+The outcome was that the model loss function converged, and in turn accuracy.
+
+The issue was addressed by annotating not only a single node, but all nodes isomorphic to it.
+The prediction was shifted from a single-class to a multi-class prediction.
+
+The set of isomorphic nodes is found by using the same message passing network that is also used in Molgena (randomly initialized).
+Nodes with approximately the same hidden vector are isomorphic.
+Isomorphic nodes in a graph depend on nodes/edges feature vector, and the number of iterations performed in message passing.
+
+\section{Results}
+
+TODO
 
 \section{Future work}
 
 \begin{itemize}
 \item Increase the accuracy of the reconstruction task, SOTA for similar models is >70\%
-\item Add target molecule latent vector to input to SelectAttachmentClusters
-\item Improve ''complete inference'' with parallelization
+\item \textbf{Important}: add target molecule latent vector to input to SelectAttachmentClusters
+\item Improve ''complete inference'' performance batching and parallelization
+\item Improve reconstruction accuracy by improving the MPN (in literature they employ LSTM)
+\item Explore the latent space: try PSO (Particle Swarm Optimization) to search for improved molecules
 \end{itemize}
 
+\par\noindent\rule{\textwidth}{0.4pt}
+
+I would like to thank \href{https://github.com/Kidara}{Kidara} from the \href{https://t.me/matematicaIT/369761}{Italian Math Telegram group},
+and the guys from \href{https://discord.gg/jtD5nTyk}{the discord Chemistry server}, for helping me throughout this journey.
 
 \end{document}
